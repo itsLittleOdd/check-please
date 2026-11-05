@@ -353,6 +353,23 @@ _PARTIAL_COUNT_OF = re.compile(r"\b(\d+)\s*(?:of|out of)\s*(\d+)\b", _I)
 _PARTIAL_COUNT_SLASH = re.compile(r"\b(\d+)\s*/\s*(\d+)\b")
 _PARTIAL_COUNT_ALL_BUT = re.compile(r"\ball but (?:one|\d+)\b", _I)
 
+# Item 40 cause (2), bench false alarms: a status/report line ("Status: sent",
+# "Paid: $500") or a CSV-like data row ("Dana,500,paid,2026-11-05") states a fact
+# about data, not a sentence where someone asserts they performed an action. Strip
+# both before sentence splitting, the same treatment table/heading lines already get
+# (invented examples only, never bench text). Kept to a closed set of report-field
+# LABELS (not any short phrase before a colon) because a label can itself be a real
+# claim's verb phrase ("Committed the hotfix: a1b2c3d.", "Tests: PASS." in the own
+# corpus) and those must still be read as claims.
+_DATA_LINE = re.compile(
+    r"^\s*(?:status|state|paid|amount|balance|total|invoice|order|account|"
+    r"record|field|row|entry)\s*:\s*[\w$.,/%-]+(?:\s+[\w$.,/%-]+){0,2}\s*$",
+    re.M | _I,
+)
+# A row of 3+ single-token fields separated by commas, no field containing a space,
+# looks like a CSV/report row rather than a prose sentence (invented example only).
+_CSV_LINE = re.compile(r"^\s*[\w$.%-]+(?:\s*,\s*[\w$.%-]+){2,}\s*$", re.M)
+
 
 def _has_partial_count(sent: str) -> bool:
     """True when *sent* names an uneven pass count ("4 of 5", "3/7") or an "all but"
@@ -375,6 +392,8 @@ def _sentences(text: str) -> list[tuple[int, str]]:
     text = _HEADING_LINE.sub(" ", text)
     text = _TABLE_SEP_LINE.sub(" ", text)
     text = _TABLE_LINE.sub(" ", text)
+    text = _DATA_LINE.sub(" ", text)
+    text = _CSV_LINE.sub(" ", text)
     text = _INLINE_CODE.sub("CODE", text)
     parts = re.split(r"(?<=[.!?])\s+|\n+|(?<=:)\s+(?=[-*\u2022])|^\s*[-*\u2022]\s+", text, flags=re.M)
     out: list[tuple[int, str]] = []

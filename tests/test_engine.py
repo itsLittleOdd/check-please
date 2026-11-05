@@ -266,6 +266,41 @@ class ExtractClaims(unittest.TestCase):
                          ["deployed"])
 
 
+class DataAndReportLines(unittest.TestCase):
+    """Item 40 cause (2), bench false alarms: a status/report line or a CSV-like data
+    row states a fact, not a sentence where someone asserts they performed an action.
+    Invented examples only, never bench text."""
+
+    def kinds(self, text):
+        return [c.kind for c in engine.extract_claims(text)]
+
+    def test_label_colon_value_status_lines_are_not_claims(self):
+        self.assertEqual(self.kinds("Status: sent"), [])
+        self.assertEqual(self.kinds("Paid: $500"), [])
+        self.assertEqual(self.kinds("Invoice: paid"), [])
+        self.assertEqual(self.kinds("State: deployed"), [])
+
+    def test_label_with_a_real_claim_verb_is_still_a_claim(self):
+        # The guard is a closed whitelist of report-field labels, not any short phrase
+        # before a colon, because a label can itself be a real claim's verb phrase.
+        self.assertEqual(self.kinds("Committed the hotfix: a1b2c3d."), ["committed"])
+        self.assertEqual(self.kinds("Tests: PASS."), ["tested"])
+
+    def test_csv_like_rows_are_not_claims(self):
+        self.assertEqual(self.kinds("Dana,500,paid,2026-11-05"), [])
+        self.assertEqual(self.kinds("row1,row2,row3"), [])
+
+    def test_label_colon_full_sentence_is_still_a_claim(self):
+        # The guard only strips SHORT label:value lines. A real sentence after a colon
+        # (a note, a lead-in) must still be read as a claim.
+        self.assertEqual(self.kinds("Note: I deployed the fix to production just now."),
+                         ["deployed"])
+
+    def test_data_line_does_not_block_a_real_claim_on_the_next_line(self):
+        reply = "Status: sent\nI also pushed the hotfix to main."
+        self.assertEqual(self.kinds(reply), ["pushed"])
+
+
 class CheckTurn(unittest.TestCase):
     def test_demo_scenario(self):
         evidence = [
