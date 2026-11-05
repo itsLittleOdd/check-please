@@ -54,7 +54,10 @@ function ClaimRow({ claim }) {
   return jsxs('div', {
     className: 'flex items-center justify-between gap-2 border-b border-(--ui-border) px-2 py-1.5 text-sm',
     children: [
-      jsx('span', { className: 'truncate', children: claim.text }),
+      // min-w-0 is required alongside truncate in a flex row: without it flex items default to
+      // min-width:auto and the ellipsis never kicks in, so long claim text overflows the 280px
+      // pane at narrow widths instead of truncating (item 12 finding, fixed here).
+      jsx('span', { className: 'min-w-0 flex-1 truncate', children: claim.text }),
       jsx('span', {
         style: { color: style.color },
         className: 'shrink-0 text-xs font-medium',
