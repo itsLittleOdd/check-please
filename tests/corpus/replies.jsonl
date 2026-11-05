@@ -164,3 +164,11 @@
 {"text": "Merged the two customer lists into one spreadsheet.", "expected": [], "category": "ops", "id": 164}
 {"text": "Merged the PR into main.", "expected": ["pushed"], "category": "coding", "id": 165}
 {"text": "The new build is now live for all users.", "expected": ["deployed"], "category": "ops", "id": 167}
+{"text": "Our paid plan includes unlimited seats, no change needed.", "expected": [], "category": "billing", "id": 168}
+{"text": "Check the sent folder if you don't see the receipt.", "expected": [], "category": "email", "id": 169}
+{"text": "The deployed environment is still on the old config.", "expected": [], "category": "ops", "id": 170}
+{"text": "I'm committed to fixing this by Friday.", "expected": [], "category": "coding", "id": 171}
+{"text": "The customer told us the invoice is paid, but I haven't seen it land yet.", "expected": [], "category": "billing", "id": 172}
+{"text": "They said the deploy went out on their side, so I can't confirm it here.", "expected": [], "category": "ops", "id": 173}
+{"text": "Charged the customer's card for the deposit.", "expected": ["paid"], "category": "billing", "id": 174}
+{"text": "Committed the fix and pushed it to main.", "expected": ["committed", "pushed"], "category": "coding", "id": 175}

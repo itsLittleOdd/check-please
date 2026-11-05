@@ -237,19 +237,19 @@ class Claim:
 
 # (rung, pattern). Past tense / completed state only.
 _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p in [
-    ("paid", r"\b(paid(?!\s+(attention|off|vacation|leave|time off|internship))|"
+    ("paid", r"\b(paid(?!\s+(attention|off|vacation|leave|time off|internship|plan|tier|feature|version|subscription|account|add[- ]on|service))|"
              r"charged (the |your |his |her |their |an? )?(card|customer|client|account|deposit|rent|fee|balance)\b|charged \$\d+|"
              r"payment (went through|succeeded|processed|collected)|"
              r"collected (the |an? )?(deposit|payment|rent|fee)|"
              r"(invoice|bill|deposit|rent|fee|balance) (is|was|has been|have been) (paid|charged))\b"),
-    ("sent", r"\b(sent(?!\s+\w*\s*(a |an |the )?calendar invite)|emailed|e-mailed|texted|messaged|dm'?d|replied to|posted (it|this|that|the|a|an|to|in|on)\b|"
+    ("sent", r"\b(sent(?!\s+\w*\s*(a |an |the )?calendar invite|\s+(folder|items?|box|mail|tray))|emailed|e-mailed|texted|messaged|dm'?d|replied to|posted (it|this|that|the|a|an|to|in|on)\b|"
              r"notified|delivered (it|the|to)|it'?s been sent|has been sent|have been sent|went out|is out the door)"),
-    ("deployed", r"\b(deployed|is (now )?live|went live|now live|shipped to prod(uction)?|"
+    ("deployed", r"\b(deployed(?!\s+(environment|version|branch|instance|url|preview|slot))|is (now )?live|went live|now live|shipped to prod(uction)?|"
                  r"published(?!\s+(the\s+)?release\s+notes?\b)|released|rolled out)\b"),
     ("pushed", r"\b(pushed(?!\s+(back|off|through|aside|for\b|myself|hard|notifications?\b|a notification\b|the button\b))|"
                r"merged(?=\b.{0,40}(\bpr\b|pull request|branch|into main|into master|the changes|the code|the feature))|"
                r"opened (a |an |the )?(pr\b|pull request))\b"),
-    ("committed", r"\b(committed|made (a|the) commit)\b"),
+    ("committed", r"\b(committed(?!\s+to\b)|made (a|the) commit)\b"),
     ("tested", r"\b(tests? (now )?(pass|passed|passing|are passing|all pass|green|succeeded|clean|clear)|all (tests )?green|"
                r"(\w+ )?suite (passes|passed|is green)|(verified|validated|confirmed|double[- ]checked|retested|checked|tested)\b.{0,40}?\b(works|working|end to end|fine|now|fixed|resolved|is correct|gone|cleanly|clean)\b|"
                r"all \d+ tests pass(ed)?|\d+ tests? pass(ed|ing)?\b|all (\d+ )?pass(ed|ing)?\b|\d+ passed\b|"
@@ -301,6 +301,8 @@ _NEGATION = re.compile(
     r"ready to|about to|going to|plan to|want to|need to|needs to|if you|if the|if it|if this|if that|once|after you|before|"
     r"unless|until|try to|tried to|attempted|failed to|unable|supposedly|allegedly|apparently|reportedly|supposed to|"
     r"you\s+already|'s\s+\w+\s+already|was\s+already\b|"
+    r"\b(he|she|they|someone|anyone)\s+(said|told|mentioned|claimed|reported|says|tells|told us|let (us|me) know)\b|"
+    r"\b(the|our|their) (customer|client|user|vendor|other (team|side)|supplier)\b.{0,25}\b(said|told|mentioned|claimed|reported|says|confirmed)\b|"
     r"draft(ing)?\s+(a|an|the|it|this|up)|to draft|will draft)\b"
     r"|'ll\b", _I)
 _QUESTION = re.compile(r"\?\s*$")
