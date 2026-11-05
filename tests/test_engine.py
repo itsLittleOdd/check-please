@@ -42,6 +42,28 @@ class ClassifyCall(unittest.TestCase):
     def test_unrelated_terminal(self):
         self.assertIsNone(ev("terminal", {"command": "ls -la"}))
 
+    def test_generic_check_commands_count_as_tested(self):
+        """Item 27 family (e): a real check that isn't a fixed test-runner name still proves
+        tested evidence, so a backed claim doesn't get flagged NOT BACKED just because we
+        didn't recognize the command."""
+        self.assertEqual(ev("terminal", {"command": "node tools/check.mjs"}).kind, "tested")
+        self.assertEqual(ev("terminal", {"command": "bash -n deploy.sh"}).kind, "tested")
+        self.assertEqual(ev("terminal", {"command": "python3 -m py_compile app.py"}).kind, "tested")
+        self.assertEqual(ev("terminal", {"command": "tsc --noEmit"}).kind, "tested")
+        self.assertEqual(ev("terminal", {"command": "hermes plugins doctor . --ci"}).kind, "tested")
+        self.assertEqual(ev("terminal", {"command": "hermes plugins validate ."}).kind, "tested")
+        self.assertEqual(ev("terminal", {"command": "hermes plugins validate . --install-deps"}).kind, "tested")
+
+    def test_check_command_word_boundary_avoids_checkout(self):
+        """\"checkout\" and \"doctorate\" must not false-match the bare check/doctor words."""
+        self.assertIsNone(ev("terminal", {"command": "git checkout -b feature/x"}))
+        self.assertIsNone(ev("terminal", {"command": "echo 'applied for a doctorate'"}))
+
+    def test_check_flag_and_syntax_check_variants(self):
+        self.assertEqual(ev("terminal", {"command": "node --check server.js"}).kind, "tested")
+        self.assertEqual(ev("terminal", {"command": "sh -n install.sh"}).kind, "tested")
+        self.assertEqual(ev("execute_code", {"code": "assert response.status_code == 200"}).kind, "tested")
+
 
 class ClassifyCallToolFamilies(unittest.TestCase):
     """One test per real Hermes tool family (names verified in the installed source)."""

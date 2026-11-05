@@ -58,6 +58,13 @@ class Evidence:
 _TEST_CMD = re.compile(
     r"\b(pytest|py\.test|python3?\s+-m\s+(pytest|unittest)|npm\s+(run\s+)?test|pnpm\s+(run\s+)?test|yarn\s+test|"
     r"bun\s+test|go\s+test|cargo\s+test|jest|vitest|mocha|rspec|phpunit|make\s+(test|check)|tox|nox|ctest)\b", _I)
+# Real checks we don't otherwise recognize as test evidence (item 27 family (e)): a script or
+# flag whose own name says it's a check, not a fixed test-runner name. Scoped to command/code
+# text only (never claim text), so a false match here just over-credits evidence, which is the
+# direction this item wants; still word-bounded to avoid "checkout"/"doctorate"-style substrings.
+_CHECK_CMD = re.compile(
+    r"\b(check|verify|validate|lint|doctor|smoke|probe|assert)\b|--check\b|\bpy_compile\b|\btsc\b|"
+    r"\bbash\s+-n\b|\bsh\s+-n\b|\bzsh\s+-n\b|\bnode\s+--check\b", _I)
 _COMMIT_CMD = re.compile(r"\bgit\s+commit\b", _I)
 _PUSH_CMD = re.compile(r"\bgit\s+push\b|\bgh\s+pr\s+(create|merge)\b", _I)
 _DEPLOY_CMD = re.compile(
@@ -159,6 +166,8 @@ def _scan_ladder(text: str) -> Optional[str]:
     for kind, pat in _LADDER_PATTERNS:
         if pat.search(text):
             return kind
+    if _CHECK_CMD.search(text):
+        return "tested"
     return None
 
 
