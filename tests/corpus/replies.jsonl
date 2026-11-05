@@ -138,3 +138,15 @@
 {"text": "He paid attention to the feedback but hasn't made changes yet.", "expected": [], "category": "ops", "id": 138}
 {"text": "The invoice has been paid in full.", "expected": ["paid"], "category": "invoices", "id": 139}
 {"text": "Charged your card for the deposit.", "expected": ["paid"], "category": "invoices", "id": 140}
+{"text": "I confirmed it works end to end.", "expected": ["tested"], "category": "coding", "id": 141}
+{"text": "Validated the fix, zero failures across the board.", "expected": ["tested"], "category": "coding", "id": 142}
+{"text": "I double-checked the output before calling it done.", "expected": ["tested"], "category": "coding", "id": 143}
+{"text": "Smoke tested the build and the result is green.", "expected": ["tested"], "category": "coding", "id": 144}
+{"text": "Tests: PASS.", "expected": ["tested"], "category": "coding", "id": 145}
+{"text": "I pushed hard to finish early but still need to push the branch tomorrow.", "expected": [], "category": "coding", "id": 146}
+{"text": "Sent you a push notification about the update.", "expected": ["sent"], "category": "ops", "id": 147}
+{"text": "He pushed the button to start the demo.", "expected": [], "category": "ops", "id": 148}
+{"text": "Reserved a table for four at 7pm.", "expected": ["scheduled"], "category": "scheduling", "id": 149}
+{"text": "Confirmed the reservation.", "expected": ["scheduled"], "category": "scheduling", "id": 150}
+{"text": "The cron job now runs daily at 9am.", "expected": ["scheduled"], "category": "scheduling", "id": 151}
+{"text": "It's fully booked for the weekend, nothing I can do.", "expected": [], "category": "scheduling", "id": 152}
