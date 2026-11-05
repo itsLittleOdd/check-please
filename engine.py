@@ -383,6 +383,23 @@ def summary_line(verdicts: list[Verdict]) -> str:
     return f"Check: {', '.join(parts)}.{tail} /check for detail."
 
 
+def apply_cross_turn_stale(verdicts: list[Verdict], edited_since_pass: bool, note: str = "") -> list[Verdict]:
+    """Upgrade NOT_BACKED "tested" claims to STALE when the caller already knows (from state
+    kept across turns, outside this function) that tests last passed in an earlier turn and the
+    code changed since with no rerun. This turn's own evidence (check_turn) still wins: a claim
+    already BACKED, FAILED or same-turn STALE here is left untouched."""
+    if not edited_since_pass:
+        return verdicts
+    out: list[Verdict] = []
+    for v in verdicts:
+        if v.claim.kind == "tested" and v.status == "NOT_BACKED":
+            out.append(Verdict(v.claim, "STALE", v.proof, v.proven_rung,
+                                note or "tests passed in an earlier turn, code changed since, no rerun this turn"))
+        else:
+            out.append(v)
+    return out
+
+
 def detail_report(verdicts: list[Verdict]) -> str:
     if not verdicts:
         return "Check, Please: no completion claims found in the last reply."

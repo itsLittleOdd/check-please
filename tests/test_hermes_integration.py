@@ -137,6 +137,50 @@ class RealHookHarnessTest(unittest.TestCase):
         self.assertTrue(transformed)
         self.assertIn("1 not backed", transformed)
 
+    def test_tests_pass_two_turns_after_an_edit_is_caught_as_stale_across_a_module_reload(self):
+        """Backlog item 6: cross-turn stale, with the record read back from ctx.state (file-backed
+        under plugin-data/) after a forced plugin reload, not from in-process module globals."""
+        manager = self.plugins.get_plugin_manager()
+        manager.discover_and_load(force=True)
+        session_id = "sess-real-hook-3"
+
+        # Turn 1: tests actually run and pass.
+        manager.invoke_hook("pre_llm_call", session_id=session_id, turn_id="turn-1")
+        manager.invoke_hook(
+            "post_tool_call", tool_name="terminal", args={"command": "pytest -q"},
+            result={"exit_code": 0, "output": "OK"}, status="success", session_id=session_id,
+        )
+        results_1 = manager.invoke_hook(
+            "transform_llm_output", response_text="Tests pass.", session_id=session_id,
+        )
+        transformed_1 = next((r for r in results_1 if isinstance(r, str)), "")
+        self.assertIn("1 backed", transformed_1)
+
+        # Turn 2: the file is edited again, no rerun, and the reply makes no test claim.
+        manager.invoke_hook("pre_llm_call", session_id=session_id, turn_id="turn-2")
+        manager.invoke_hook(
+            "post_tool_call", tool_name="write_file", args={"path": "engine.py"},
+            result={"error": None}, status="success", session_id=session_id,
+        )
+        manager.invoke_hook(
+            "transform_llm_output", response_text="Updated the function.", session_id=session_id,
+        )
+
+        # Force a real plugin module reload between turns 2 and 3: in-memory globals
+        # (_ctx_box, _CROSS_MEM, _LEDGER) are gone; only ctx.state on disk can carry the fact
+        # forward that tests passed in turn 1 and a later edit has not been retested.
+        manager.discover_and_load(force=True)
+
+        # Turn 3: claims tests pass again, but nothing reran them this turn.
+        manager.invoke_hook("pre_llm_call", session_id=session_id, turn_id="turn-3")
+        results_3 = manager.invoke_hook(
+            "transform_llm_output", response_text="Tests pass now.", session_id=session_id,
+        )
+        transformed_3 = next((r for r in results_3 if isinstance(r, str)), "")
+        self.assertTrue(transformed_3, "transform_llm_output returned no replacement text on turn 3")
+        self.assertIn("1 stale", transformed_3)
+        self.assertNotIn("not backed", transformed_3)
+
 
 if __name__ == "__main__":
     unittest.main()

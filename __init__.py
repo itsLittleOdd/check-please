@@ -30,6 +30,13 @@ _MAX_SESSIONS = 200
 
 _settings: dict[str, Any] = {"line": "all"}   # all | issues | off
 
+# Cross-turn "tests passed, then code changed, no rerun since" tracking (backlog item 6).
+# Source of truth is ctx.state (file-backed JSON under plugin-data/, survives a module
+# reload) once register(ctx) has run; _CROSS_MEM is only a fallback for unit tests that
+# call the module functions directly without a real PluginContext.
+_ctx_box: dict[str, Any] = {"ctx": None}
+_CROSS_MEM: dict[str, dict] = {}
+
 
 def _session(sid: Any) -> str:
     return str(sid or "")
@@ -43,9 +50,56 @@ def _reset_turn(sid: str, turn: Any = None) -> None:
                 _LEDGER.pop(old, None)
 
 
+def _load_cross() -> dict:
+    ctx = _ctx_box.get("ctx")
+    if ctx is not None:
+        try:
+            return dict(ctx.state.get("cross_turn", default={}) or {})
+        except Exception:
+            logger.debug("check-please cross-turn state read failed", exc_info=True)
+    return dict(_CROSS_MEM)
+
+
+def _save_cross(data: dict) -> None:
+    ctx = _ctx_box.get("ctx")
+    if ctx is not None:
+        try:
+            ctx.state.set("cross_turn", data)
+            return
+        except Exception:
+            logger.debug("check-please cross-turn state write failed", exc_info=True)
+    _CROSS_MEM.clear()
+    _CROSS_MEM.update(data)
+
+
+def _cross_record(sid: str) -> dict:
+    rec = _load_cross().get(sid) or {}
+    return {
+        "turn_num": int(rec.get("turn_num", 0)),
+        "last_pass_turn": rec.get("last_pass_turn"),
+        "edited_after_pass": bool(rec.get("edited_after_pass", False)),
+        "pass_detail": str(rec.get("pass_detail", "")),
+    }
+
+
+def _save_cross_record(sid: str, rec: dict) -> None:
+    with _LOCK:
+        data = _load_cross()
+        data[sid] = rec
+        if len(data) > _MAX_SESSIONS:
+            for old in list(data)[: len(data) - _MAX_SESSIONS]:
+                if old != sid:
+                    data.pop(old, None)
+        _save_cross(data)
+
+
 def on_pre_llm_call(session_id: Any = None, turn_id: Any = None, **kwargs: Any) -> None:
     try:
-        _reset_turn(_session(session_id), turn_id)
+        sid = _session(session_id)
+        _reset_turn(sid, turn_id)
+        rec = _cross_record(sid)
+        rec["turn_num"] += 1
+        _save_cross_record(sid, rec)
     except Exception:  # never break a turn
         logger.debug("check-please pre_llm_call failed", exc_info=True)
     return None
@@ -66,6 +120,17 @@ def on_post_tool_call(tool_name: str = "", args: Any = None, result: Any = None,
             book["evidence"].append(ev)
             if len(book["evidence"]) > _MAX_EVIDENCE:
                 del book["evidence"][: len(book["evidence"]) - _MAX_EVIDENCE]
+        if ev.ok and ev.kind == "tested":
+            rec = _cross_record(sid)
+            rec["last_pass_turn"] = rec["turn_num"]
+            rec["edited_after_pass"] = False
+            rec["pass_detail"] = ev.detail or ev.tool
+            _save_cross_record(sid, rec)
+        elif ev.ok and ev.kind in {"saved", "drafted"}:
+            rec = _cross_record(sid)
+            if rec["last_pass_turn"] is not None and rec["turn_num"] > rec["last_pass_turn"]:
+                rec["edited_after_pass"] = True
+                _save_cross_record(sid, rec)
     except Exception:
         logger.debug("check-please post_tool_call failed", exc_info=True)
     return None
@@ -79,6 +144,11 @@ def on_transform_llm_output(response_text: str = "", session_id: Any = None, **k
         with _LOCK:
             evidence = list(_LEDGER.get(sid, {}).get("evidence", []))
         verdicts = engine.check_turn(response_text or "", evidence)
+        rec = _cross_record(sid)
+        if rec["edited_after_pass"] and rec["last_pass_turn"] is not None:
+            note = (f"tests passed in turn {rec['last_pass_turn']} ({rec['pass_detail']}), "
+                    "code changed since, no rerun this turn")
+            verdicts = engine.apply_cross_turn_stale(verdicts, True, note)
         with _LOCK:
             _LAST[sid] = verdicts
             _LAST_SESSION[0] = sid
@@ -104,6 +174,7 @@ def handle_check(raw_args: str = "", session_id: Any = None, **kwargs: Any) -> s
 
 
 def register(ctx) -> None:
+    _ctx_box["ctx"] = ctx
     try:
         _settings["line"] = ctx.get_config("line", default="all")
     except Exception:

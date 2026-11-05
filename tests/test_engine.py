@@ -217,6 +217,42 @@ class PluginHooks(unittest.TestCase):
         self.assertIsNone(m.on_post_tool_call(tool_name=None, args="garbage{", result=object()))
         self.assertIsNone(m.on_transform_llm_output(response_text=None))
 
+    def test_cross_turn_stale_tests_pass_then_edit_then_claim_two_turns_later(self):
+        """Backlog item 6: tests passed in turn 1, code edited in turn 2 (no rerun), turn 3
+        claims tests pass again with no evidence that turn. Should read STALE, not NOT_BACKED."""
+        m = self.mod
+        sid = "s-cross-turn"
+        m.on_pre_llm_call(session_id=sid, turn_id="t1")
+        m.on_post_tool_call(tool_name="terminal", args={"command": "pytest -q"},
+                            result={"exit_code": 0}, session_id=sid)
+        out1 = m.on_transform_llm_output(response_text="Tests pass.", session_id=sid)
+        self.assertIn("1 backed", out1)
+
+        m.on_pre_llm_call(session_id=sid, turn_id="t2")
+        m.on_post_tool_call(tool_name="write_file", args={"path": "engine.py"},
+                            result={"ok": True}, session_id=sid)
+        m.on_transform_llm_output(response_text="Updated the function.", session_id=sid)
+
+        m.on_pre_llm_call(session_id=sid, turn_id="t3")
+        out3 = m.on_transform_llm_output(response_text="Tests pass now.", session_id=sid)
+        self.assertIn("1 stale", out3)
+        self.assertNotIn("not backed", out3)
+
+    def test_cross_turn_stale_does_not_fire_when_no_edit_happened_since_the_pass(self):
+        m = self.mod
+        sid = "s-cross-turn-clean"
+        m.on_pre_llm_call(session_id=sid, turn_id="t1")
+        m.on_post_tool_call(tool_name="terminal", args={"command": "pytest -q"},
+                            result={"exit_code": 0}, session_id=sid)
+        m.on_transform_llm_output(response_text="Tests pass.", session_id=sid)
+
+        m.on_pre_llm_call(session_id=sid, turn_id="t2")
+        out2 = m.on_transform_llm_output(response_text="Tests pass still.", session_id=sid)
+        # No edit happened between turn 1 and turn 2, so this is a plain unbacked claim,
+        # not a stale one: nothing to be stale about.
+        self.assertIn("1 not backed", out2)
+        self.assertNotIn("stale", out2)
+
 
 if __name__ == "__main__":
     unittest.main()
