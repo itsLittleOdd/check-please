@@ -42,6 +42,37 @@ class ClassifyCall(unittest.TestCase):
         self.assertIsNone(ev("terminal", {"command": "ls -la"}))
 
 
+class ClassifyCallToolFamilies(unittest.TestCase):
+    """One test per real Hermes tool family (names verified in the installed source)."""
+
+    def test_execute_code_scans_the_code_body(self):
+        self.assertEqual(ev("execute_code", {"code": "import os\nos.system('git push origin main')"}).kind,
+                          "pushed")
+        self.assertEqual(ev("execute_code", {"code": "import os; os.system('pytest -q')"}).kind,
+                          "tested")
+        self.assertIsNone(ev("execute_code", {"code": "print(sum(range(10)))"}))
+
+    def test_browser_exec_form_submit_is_not_a_send(self):
+        self.assertIsNone(ev("browser_exec", {"code": "page.fill('#amount', '40')\npage.click('#submit')"}))
+
+    def test_browser_exec_webhook_post_is_a_send(self):
+        self.assertEqual(ev("browser_exec", {"code": "requests.post('https://hooks.slack.com/services/x')"}).kind,
+                          "sent")
+
+    def test_delegate_task_proves_nothing_itself(self):
+        self.assertIsNone(ev("delegate_task", {"tasks": [{"prompt": "research pricing"}]}))
+        self.assertIsNone(ev("delegate_task", {"tasks": []}, {"status": "completed"}))
+
+    def test_cronjob_manage_create_and_readonly(self):
+        self.assertEqual(ev("cronjob_manage", {"action": "create", "name": "nightly backup"}).kind, "scheduled")
+        self.assertIsNone(ev("cronjob_manage", {"action": "list"}))
+
+    def test_connector_tool_naming(self):
+        self.assertEqual(ev("connectors__gmail__send_email", {"to": "a@b.c"}).kind, "sent")
+        self.assertIsNone(ev("connectors__gmail__list_messages", {}))
+        self.assertEqual(ev("connectors__notion__create_draft", {}).kind, "drafted")
+
+
 class ExtractClaims(unittest.TestCase):
     def kinds(self, text):
         return [c.kind for c in engine.extract_claims(text)]

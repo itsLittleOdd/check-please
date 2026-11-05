@@ -96,6 +96,30 @@ def call_succeeded(result: Any, status: Optional[str] = None) -> bool:
     return True
 
 
+# Real Hermes tool names (verified in ~/.hermes/hermes-agent/tools, read-only, 2026-11-05):
+# execute_code (code_execution_tool.py), browser_exec (browser_use_cli.py: runs Python against
+# browser helpers, not a fixed verb), delegate_task (delegate_tool.py: spins a child agent, proves
+# nothing itself — the child's own tool calls are what would prove something, and this plugin only
+# ever sees the parent session's ledger), cronjob_manage (cronjob_tools.py).
+_CODE_TEXT_TOOLS = {"execute_code", "browser_exec"}
+_NO_EVIDENCE_TOOLS = {"delegate_task", "delegate", "oneshot_delegate"}
+
+# Same ladder, reusable against any free-text blob (a shell command or a code_execution/browser_exec
+# body): both run things that can match the same command patterns (git push, vercel --prod, a
+# requests.post to a webhook, stripe.Charge.create, ...).
+_LADDER_PATTERNS = (("paid", _PAY_CMD), ("sent", _SEND_CMD), ("deployed", _DEPLOY_CMD),
+                     ("pushed", _PUSH_CMD), ("committed", _COMMIT_CMD), ("scheduled", _SCHEDULE_CMD),
+                     ("tested", _TEST_CMD), ("deleted", _DELETE_CMD))
+
+
+def _scan_ladder(text: str) -> Optional[str]:
+    """Highest-stakes rung whose pattern matches anywhere in text, or None."""
+    for kind, pat in _LADDER_PATTERNS:
+        if pat.search(text):
+            return kind
+    return None
+
+
 def classify_call(tool_name: str, args: Any, result: Any = None, status: Optional[str] = None,
                   seq: int = 0, ts: float = 0.0) -> Optional[Evidence]:
     """Return the evidence a tool call provides, or None when it proves nothing on the ladder."""
@@ -104,16 +128,26 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
     a = _as_dict(args)
     ok = call_succeeded(result, status)
 
+    if low in _NO_EVIDENCE_TOOLS:
+        # A child agent's work is not this parent turn's evidence: the plugin only sees the
+        # parent session's ledger, and the child may still be running or may have failed.
+        return None
+
     if low in {"terminal", "shell", "bash", "run_command", "execute_command"}:
         cmd = str(a.get("command") or a.get("cmd") or "")
         short = cmd.strip().splitlines()[0][:160] if cmd.strip() else ""
-        # Order matters: the highest-stakes rung wins for a compound command.
-        for kind, pat in (("paid", _PAY_CMD), ("sent", _SEND_CMD), ("deployed", _DEPLOY_CMD),
-                          ("pushed", _PUSH_CMD), ("committed", _COMMIT_CMD), ("scheduled", _SCHEDULE_CMD),
-                          ("tested", _TEST_CMD), ("deleted", _DELETE_CMD)):
-            if pat.search(cmd):
-                return Evidence(kind, ok, name, short, seq, ts)
-        return None
+        kind = _scan_ladder(cmd)
+        return Evidence(kind, ok, name, short, seq, ts) if kind else None
+
+    if low in _CODE_TEXT_TOOLS:
+        # execute_code runs Python directly; browser_exec runs Python against browser helpers.
+        # Neither has a fixed verb, so scan the code body for the same ladder patterns. A plain
+        # form fill/click/navigate call matches nothing here, which is the point: a form submit
+        # is not a send unless the code actually posts somewhere (webhook URL, mail API, etc.).
+        code = str(a.get("code") or a.get("script") or "")
+        short = code.strip().splitlines()[0][:160] if code.strip() else ""
+        kind = _scan_ladder(code)
+        return Evidence(kind, ok, name, short, seq, ts) if kind else None
 
     if low in _WRITE_TOOLS:
         path = str(a.get("path") or a.get("file_path") or a.get("filename") or "")
@@ -126,7 +160,8 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
             return Evidence("scheduled", ok, name, str(a.get("name") or a.get("schedule") or "")[:160], seq, ts)
         return None
 
-    # Messaging/MCP/connector tools. Read-only verbs never count as a send.
+    # Messaging/MCP/connector tools (mcp__<server>__<tool>, connectors__<connector>__<tool>) and
+    # bare names like send_message. Read-only verbs never count as a send.
     tail = re.split(r"__|\.", low)[-1]
     if _DRAFT_TOOL.search(tail):
         return Evidence("drafted", ok, name, _target_hint(a), seq, ts)
