@@ -419,6 +419,79 @@ def tally_cron_job(tally: dict, job_id: str, job_name: str, verdicts: list[Verdi
     return tally
 
 
+def tally_day(day: dict, verdicts: list[Verdict], max_issues: int = 30) -> dict:
+    """Fold *verdicts* into *day*'s running counts and non-backed issue list (backlog item 8).
+
+    *day* is {"claims","backed","stale","failed","not_backed","issues":[...]}. "issues" holds
+    up to *max_issues* non-BACKED claims as {"text","status","note"} (claim sentence, trimmed
+    to 80 chars), oldest dropped first once full so the log stays bounded. Mutates and returns
+    *day* so callers persist it as-is."""
+    if not verdicts:
+        return day
+    for key in ("claims", "backed", "stale", "failed", "not_backed"):
+        day.setdefault(key, 0)
+    issues = day.setdefault("issues", [])
+    status_key = {"STALE": "stale", "FAILED": "failed", "NOT_BACKED": "not_backed"}
+    for v in verdicts:
+        day["claims"] += 1
+        if v.status == "BACKED":
+            day["backed"] += 1
+            continue
+        day[status_key[v.status]] += 1
+        issues.append({"text": v.claim.text[:80], "status": v.status, "note": v.note})
+    if len(issues) > max_issues:
+        del issues[: len(issues) - max_issues]
+    return day
+
+
+def _truncate_for_phone(text: str, char_limit: int) -> str:
+    """Hard safety net so a digest never exceeds *char_limit* even if row-budgeting above missed
+    a case; used by daily_report and jobs_report."""
+    if len(text) <= char_limit:
+        return text
+    suffix = "\n...(truncated)"
+    return text[: char_limit - len(suffix)].rstrip() + suffix
+
+
+def daily_report(date_str: str, day: dict, char_limit: int = 1500) -> str:
+    """Phone-sized digest for /check today (backlog item 8): counts plus every non-backed
+    claim logged so far today. Caller supplies *date_str* (local date key) and the matching
+    day record from persisted state; an empty/missing day reports zero claims cleanly."""
+    claims = int((day or {}).get("claims", 0))
+    if not claims:
+        return f"Check, Please: no completion claims logged yet today ({date_str})."
+    label = {"STALE": "STALE", "FAILED": "FAILED", "NOT_BACKED": "NOT BACKED"}
+    lines = [f"Check, Please: {date_str}",
+             f"{claims} claims: {day.get('backed', 0)} backed, {day.get('stale', 0)} stale, "
+             f"{day.get('failed', 0)} failed, {day.get('not_backed', 0)} not backed."]
+    issues = day.get("issues") or []
+    if issues:
+        lines.append("Non-backed today:")
+        for item in issues:
+            lines.append(f"- {label.get(item['status'], item['status'])}: \"{item['text']}\"")
+    return _truncate_for_phone("\n".join(lines), char_limit)
+
+
+def jobs_report(tally: dict, char_limit: int = 1500) -> str:
+    """Phone-sized digest for /check jobs (backlog item 8): per cron job claim tally, busiest
+    job first. Caps rows so the output stays under *char_limit* even with many jobs."""
+    if not tally:
+        return "Check, Please: no cron job runs logged yet."
+    rows = sorted(tally.items(), key=lambda kv: kv[1].get("claims", 0), reverse=True)
+    lines = ["Check, Please: cron jobs"]
+    shown = 0
+    for job_id, row in rows:
+        line = (f"- {row.get('job_name') or job_id}: {row.get('claims', 0)} claims, "
+                f"{row.get('backed', 0)} backed, {row.get('not_backed', 0)} not backed")
+        budget = sum(len(l) + 1 for l in lines) + len(line) + 1
+        if budget > char_limit - 20 and shown:
+            lines.append(f"...(+{len(rows) - shown} more jobs)")
+            break
+        lines.append(line)
+        shown += 1
+    return _truncate_for_phone("\n".join(lines), char_limit)
+
+
 def detail_report(verdicts: list[Verdict]) -> str:
     if not verdicts:
         return "Check, Please: no completion claims found in the last reply."

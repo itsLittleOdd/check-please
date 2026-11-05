@@ -212,6 +212,91 @@ class TallyCronJob(unittest.TestCase):
         self.assertEqual(tally, {})
 
 
+class TallyDayAndDigests(unittest.TestCase):
+    """Backlog item 8: /check today and /check jobs digests."""
+
+    def test_tally_day_folds_counts_and_collects_non_backed(self):
+        day = {}
+        verdicts = engine.check_turn(
+            "Tests pass. Deployed it.",
+            [ev("terminal", {"command": "pytest -q"}, seq=1)],
+        )
+        engine.tally_day(day, verdicts)
+        self.assertEqual(day["claims"], 2)
+        self.assertEqual(day["backed"], 1)
+        self.assertEqual(day["not_backed"], 1)
+        self.assertEqual(len(day["issues"]), 1)
+        self.assertEqual(day["issues"][0]["status"], "NOT_BACKED")
+
+    def test_tally_day_accumulates_across_calls_same_day(self):
+        day = {}
+        v1 = engine.check_turn("Sent the update.", [ev("send_message", {"to": "x"}, {"ok": True}, seq=1)])
+        v2 = engine.check_turn("Pushed the branch.", [])
+        engine.tally_day(day, v1)
+        engine.tally_day(day, v2)
+        self.assertEqual(day["claims"], 2)
+        self.assertEqual(day["backed"], 1)
+        self.assertEqual(day["not_backed"], 1)
+        self.assertEqual(len(day["issues"]), 1)
+
+    def test_tally_day_caps_issue_list(self):
+        day = {}
+        for i in range(5):
+            engine.tally_day(day, engine.check_turn(f"Pushed branch {i}.", []), max_issues=3)
+        self.assertEqual(len(day["issues"]), 3)
+        # oldest dropped first: the last 3 pushes survive (branches 2, 3, 4)
+        self.assertIn("branch 2", day["issues"][0]["text"])
+        self.assertIn("branch 4", day["issues"][-1]["text"])
+
+    def test_tally_day_empty_verdicts_leaves_day_untouched(self):
+        day = {}
+        engine.tally_day(day, [])
+        self.assertEqual(day, {})
+
+    def test_daily_report_empty_day(self):
+        out = engine.daily_report("2026-11-05", {})
+        self.assertIn("no completion claims logged yet today", out)
+        self.assertIn("2026-11-05", out)
+
+    def test_daily_report_lists_counts_and_non_backed(self):
+        day = {}
+        engine.tally_day(day, engine.check_turn("Deployed it. Pushed it.", []))
+        out = engine.daily_report("2026-11-05", day)
+        self.assertIn("2 claims", out)
+        self.assertIn("2 not backed", out)
+        self.assertIn("Non-backed today:", out)
+        self.assertLess(len(out), 1500)
+
+    def test_daily_report_stays_under_phone_limit_with_many_issues(self):
+        day = {}
+        for i in range(100):
+            engine.tally_day(day, engine.check_turn(f"Pushed branch number {i}.", []), max_issues=100)
+        out = engine.daily_report("2026-11-05", day, char_limit=1500)
+        self.assertLessEqual(len(out), 1500)
+
+    def test_jobs_report_empty_tally(self):
+        self.assertIn("no cron job runs logged yet", engine.jobs_report({}))
+
+    def test_jobs_report_lists_busiest_job_first(self):
+        tally = {}
+        engine.tally_cron_job(tally, "job-1", "Quiet Job",
+                              engine.check_turn("Sent it.", [ev("send_message", {"to": "x"}, {"ok": True}, seq=1)]))
+        engine.tally_cron_job(tally, "job-2", "Busy Job",
+                              engine.check_turn("Pushed it. Deployed it. Sent it.", []))
+        out = engine.jobs_report(tally)
+        self.assertLess(out.index("Busy Job"), out.index("Quiet Job"))
+        self.assertLess(len(out), 1500)
+
+    def test_jobs_report_caps_many_jobs_under_phone_limit(self):
+        tally = {}
+        for i in range(200):
+            engine.tally_cron_job(tally, f"job-{i}", f"Job {i}",
+                                  engine.check_turn("Pushed it.", []))
+        out = engine.jobs_report(tally)
+        self.assertLessEqual(len(out), 1500)
+        self.assertIn("more jobs", out)
+
+
 class PluginHooks(unittest.TestCase):
     def setUp(self):
         import importlib.util
@@ -340,6 +425,56 @@ class PluginHooks(unittest.TestCase):
         m.on_pre_llm_call(session_id=sid, turn_id="t1")
         m.on_transform_llm_output(response_text="Pushed the branch.", session_id=sid)
         self.assertEqual(m._load_cron_tally(), {})
+
+    def test_check_today_reports_counts_and_non_backed(self):
+        """Backlog item 8: /check today logs every turn's claims, cron or not."""
+        m = self.mod
+        m._DAILY_MEM.clear()
+        sid = "s-today-1"
+        m.on_pre_llm_call(session_id=sid, turn_id="t1")
+        m.on_transform_llm_output(response_text="Pushed the branch. Deployed it.", session_id=sid)
+        out = m.handle_check("today", session_id=sid)
+        self.assertIn("2 claims", out)
+        self.assertIn("2 not backed", out)
+        self.assertIn("Non-backed today:", out)
+        self.assertLess(len(out), 1500)
+
+    def test_check_jobs_reports_per_job_tally(self):
+        """Backlog item 8: /check jobs reads the cron tally built by backlog item 7."""
+        m = self.mod
+
+        class _StubState:
+            def __init__(self):
+                self._d = {}
+
+            def get(self, key, default=None):
+                return self._d.get(key, default)
+
+            def set(self, key, value):
+                self._d[key] = value
+
+        class _StubRun:
+            job_id = "job-8"
+            job_name = "Phone Digest"
+
+        class _StubCtx:
+            def __init__(self):
+                self.state = _StubState()
+
+            def current_cron_execution(self):
+                return _StubRun()
+
+        m._ctx_box["ctx"] = _StubCtx()
+        try:
+            sid = "s-jobs-1"
+            m.on_pre_llm_call(session_id=sid, turn_id="t1")
+            m.on_transform_llm_output(response_text="Sent the report.", session_id=sid)
+            out = m.handle_check("jobs", session_id=sid)
+            self.assertIn("Phone Digest", out)
+            self.assertIn("1 claims", out)
+            self.assertLess(len(out), 1500)
+        finally:
+            m._ctx_box["ctx"] = None
 
 
 if __name__ == "__main__":

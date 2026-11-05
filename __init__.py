@@ -6,6 +6,8 @@ Hooks (all observe-only except the cosmetic reply transform):
   transform_llm_output  -> append one "Check:" line under replies that make completion claims
 Slash command:
   /check                -> full per-claim detail for the last checked reply
+  /check today          -> counts plus every non-backed claim logged today
+  /check jobs           -> per cron job claim tally, busiest job first
 
 No network, no model calls, no shell. Never blocks, approves or edits a tool call.
 """
@@ -40,6 +42,11 @@ _CROSS_MEM: dict[str, dict] = {}
 # Per-cron-job claim tally (backlog item 7): job_id -> {"job_name","claims","backed","not_backed"}.
 # Same ctx.state-with-in-memory-fallback pattern as the cross-turn record above.
 _CRON_TALLY_MEM: dict[str, dict] = {}
+
+# Per-local-day claim log for /check today (backlog item 8): date_key -> engine.tally_day() row.
+# Same ctx.state-with-in-memory-fallback pattern; trimmed to _MAX_DAYS oldest-first.
+_DAILY_MEM: dict[str, dict] = {}
+_MAX_DAYS = 14
 
 
 def _session(sid: Any) -> str:
@@ -78,6 +85,36 @@ def _save_cron_tally(tally: dict) -> None:
             logger.debug("check-please cron tally write failed", exc_info=True)
     _CRON_TALLY_MEM.clear()
     _CRON_TALLY_MEM.update(tally)
+
+
+def _today_key() -> str:
+    """Local calendar date as YYYY-MM-DD; the key for the /check today log (backlog item 8)."""
+    return time.strftime("%Y-%m-%d", time.localtime())
+
+
+def _load_daily() -> dict:
+    ctx = _ctx_box.get("ctx")
+    if ctx is not None:
+        try:
+            return dict(ctx.state.get("daily_log", default={}) or {})
+        except Exception:
+            logger.debug("check-please daily log read failed", exc_info=True)
+    return dict(_DAILY_MEM)
+
+
+def _save_daily(daily: dict) -> None:
+    if len(daily) > _MAX_DAYS:
+        for old in sorted(daily)[: len(daily) - _MAX_DAYS]:
+            daily.pop(old, None)
+    ctx = _ctx_box.get("ctx")
+    if ctx is not None:
+        try:
+            ctx.state.set("daily_log", daily)
+            return
+        except Exception:
+            logger.debug("check-please daily log write failed", exc_info=True)
+    _DAILY_MEM.clear()
+    _DAILY_MEM.update(daily)
 
 
 def _reset_turn(sid: str, turn: Any = None) -> None:
@@ -193,6 +230,13 @@ def on_transform_llm_output(response_text: str = "", session_id: Any = None, **k
                 tally = _load_cron_tally()
                 engine.tally_cron_job(tally, str(run.job_id), str(run.job_name), verdicts)
                 _save_cron_tally(tally)
+        if verdicts:
+            with _LOCK:
+                daily = _load_daily()
+                key = _today_key()
+                day = daily.setdefault(key, {})
+                engine.tally_day(day, verdicts)
+                _save_daily(daily)
         with _LOCK:
             _LAST[sid] = verdicts
             _LAST_SESSION[0] = sid
@@ -209,6 +253,16 @@ def on_transform_llm_output(response_text: str = "", session_id: Any = None, **k
 
 def handle_check(raw_args: str = "", session_id: Any = None, **kwargs: Any) -> str:
     try:
+        arg = (raw_args or "").strip().split()[0].lower() if (raw_args or "").strip() else ""
+        if arg == "today":
+            with _LOCK:
+                daily = _load_daily()
+            key = _today_key()
+            return engine.daily_report(key, daily.get(key, {}))
+        if arg == "jobs":
+            with _LOCK:
+                tally = _load_cron_tally()
+            return engine.jobs_report(tally)
         sid = _session(session_id) or _LAST_SESSION[0]
         with _LOCK:
             verdicts = _LAST.get(sid) or _LAST.get(_LAST_SESSION[0]) or []
@@ -226,4 +280,6 @@ def register(ctx) -> None:
     ctx.register_hook("pre_llm_call", on_pre_llm_call)
     ctx.register_hook("post_tool_call", on_post_tool_call)
     ctx.register_hook("transform_llm_output", on_transform_llm_output)
-    ctx.register_command("check", handle_check, description="Show which claims in the last reply the tool log backs")
+    ctx.register_command("check", handle_check,
+                          description="Show which claims the tool log backs: last reply, "
+                                       "'today' for the day's tally, 'jobs' for per-cron-job tally")
