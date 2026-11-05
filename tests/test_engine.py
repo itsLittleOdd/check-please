@@ -73,6 +73,64 @@ class ClassifyCallToolFamilies(unittest.TestCase):
         self.assertEqual(ev("connectors__notion__create_draft", {}).kind, "drafted")
 
 
+class CallSucceededRealResultShapes(unittest.TestCase):
+    """call_succeeded against the EXACT post_tool_call result shapes the installed Hermes source
+    returns, not guessed ones. Sources (read-only, ~/.hermes/hermes-agent, verified 2026-11-05):
+      terminal      -> tools/terminal_tool_result.py:259 result_dict = {"output":.., "exit_code":.., "error": None}
+      write_file    -> tools/file_operations_common.py:42-58 WriteResult.to_dict() (bytes_written,
+                       dirs_created always present; verified/lint/lsp_diagnostics/error/warning only if not None)
+      patch         -> tools/file_operations_common.py:62-96 PatchResult.to_dict() ("success" ALWAYS
+                       present; diff/files_modified/.../error only if truthy)
+      generic error -> tools/registry.py:1057 tool_error() -> {"error": msg, **extra} (no success/ok key;
+                       used by write_file's own guard checks via file_tools_write_guards.py:600 _stale_write_refusal
+                       and by patch's precheck_err path in file_tools.py)
+      send_message  -> tools/send_message_tool.py:283 checks result.get("success"); on partial media
+                       failure it force-sets result["success"] = False (line 291) even though the text sent
+    """
+
+    def test_terminal_result_dict(self):
+        self.assertTrue(engine.call_succeeded({"output": "ok\n", "exit_code": 0, "error": None}))
+        self.assertFalse(engine.call_succeeded({"output": "boom\n", "exit_code": 1, "error": None}))
+
+    def test_write_file_success_has_no_success_key(self):
+        # WriteResult.to_dict() never emits a "success" field; absence of "error" IS success.
+        self.assertTrue(engine.call_succeeded({"bytes_written": 42, "dirs_created": False, "verified": True}))
+        self.assertTrue(engine.call_succeeded({"bytes_written": 10, "dirs_created": True}))
+
+    def test_write_file_error_has_no_success_key_either(self):
+        self.assertFalse(engine.call_succeeded({"bytes_written": 0, "dirs_created": False, "error": "disk full"}))
+
+    def test_write_file_stale_refusal_shape(self):
+        # file_tools_write_guards.py:600 _stale_write_refusal: {"error": ..., "stale_write_blocked": True, "path": ...}
+        self.assertFalse(engine.call_succeeded(
+            {"error": "Refusing to overwrite x: stale.", "stale_write_blocked": True, "path": "x.py"}))
+
+    def test_patch_success_key_always_present(self):
+        self.assertTrue(engine.call_succeeded({"success": True, "diff": "...", "files_modified": ["a.py"]}))
+        self.assertFalse(engine.call_succeeded({"success": False, "error": "Could not find old_string"}))
+
+    def test_patch_no_change_is_still_success(self):
+        # PatchResult.to_dict(): success True and no_change True are independent; no_change is a
+        # success-shaped no-op, never a failure signal on its own.
+        self.assertTrue(engine.call_succeeded({"success": True, "no_change": True, "note": "already present"}))
+
+    def test_patch_generic_tool_error_has_no_success_key(self):
+        # tool_error() precheck path (e.g. "path required") has no "success" field at all.
+        self.assertFalse(engine.call_succeeded({"error": "path required"}))
+
+    def test_send_message_success_key(self):
+        self.assertTrue(engine.call_succeeded({"success": True, "platform": "discord"}))
+        self.assertFalse(engine.call_succeeded({"success": False, "error": "Unknown platform: x"}))
+
+    def test_send_message_partial_media_failure_is_not_success(self):
+        # send_message_tool.py:288-294: text delivered but a requested attachment was dropped ->
+        # the tool itself force-flips success to False so a caller watching "success" doesn't book
+        # a delivery that never fully happened.
+        self.assertFalse(engine.call_succeeded({
+            "success": False, "partial_success": True, "media_dropped": ["photo.png"],
+            "error": "Delivery incomplete: 1 requested MEDIA attachment(s) dropped before delivery"}))
+
+
 class ExtractClaims(unittest.TestCase):
     def kinds(self, text):
         return [c.kind for c in engine.extract_claims(text)]
