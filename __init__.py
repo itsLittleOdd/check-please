@@ -42,6 +42,11 @@ _CROSS_MEM: dict[str, dict] = {}
 # Per-cron-job claim tally (backlog item 7): job_id -> {"job_name","claims","backed","not_backed"}.
 # Same ctx.state-with-in-memory-fallback pattern as the cross-turn record above.
 _CRON_TALLY_MEM: dict[str, dict] = {}
+# Honest limit from items 7/16: this had no cap, unlike _MAX_SESSIONS/_MAX_DAYS, so a
+# long-running install with many distinct cron jobs could grow it unbounded. Trimmed here
+# (item 20), same oldest-inserted-first pattern as _save_last_reply, protecting the job_id
+# being written this call so the tally never evicts the row it was just asked to update.
+_MAX_CRON_JOBS = 200
 
 # Per-local-day claim log for /check today (backlog item 8): date_key -> engine.tally_day() row.
 # Same ctx.state-with-in-memory-fallback pattern; trimmed to _MAX_DAYS oldest-first.
@@ -82,7 +87,17 @@ def _load_cron_tally() -> dict:
     return dict(_CRON_TALLY_MEM)
 
 
-def _save_cron_tally(tally: dict) -> None:
+def _save_cron_tally(tally: dict, keep: str | None = None) -> None:
+    if len(tally) > _MAX_CRON_JOBS:
+        over = len(tally) - _MAX_CRON_JOBS
+        removed = 0
+        for old in list(tally):
+            if removed >= over:
+                break
+            if old == keep:
+                continue
+            tally.pop(old, None)
+            removed += 1
     ctx = _ctx_box.get("ctx")
     if ctx is not None:
         try:
@@ -264,8 +279,9 @@ def on_transform_llm_output(response_text: str = "", session_id: Any = None, **k
         if run is not None and verdicts:
             with _LOCK:
                 tally = _load_cron_tally()
-                engine.tally_cron_job(tally, str(run.job_id), str(run.job_name), verdicts)
-                _save_cron_tally(tally)
+                job_id = str(run.job_id)
+                engine.tally_cron_job(tally, job_id, str(run.job_name), verdicts)
+                _save_cron_tally(tally, keep=job_id)
         if verdicts:
             with _LOCK:
                 daily = _load_daily()

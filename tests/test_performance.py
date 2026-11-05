@@ -237,6 +237,18 @@ class MemoryBounded(unittest.TestCase):
         plugin._save_daily(daily)
         self.assertLessEqual(len(plugin._load_daily()), plugin._MAX_DAYS)
 
+    def test_cron_tally_capped_at_max_cron_jobs(self):
+        """Item 20: cron_tally had no cap (honest limit since items 7/16); a long-running
+        install with many distinct cron jobs could grow it unbounded. Confirms the trim
+        holds and the row being written this call survives even when it would otherwise
+        be the oldest-inserted entry evicted."""
+        tally = {f"job-{i}": {"job_name": f"Job {i}", "claims": 1, "backed": 1, "not_backed": 0}
+                  for i in range(plugin._MAX_CRON_JOBS + 50)}
+        plugin._save_cron_tally(tally, keep="job-0")
+        data = plugin._load_cron_tally()
+        self.assertLessEqual(len(data), plugin._MAX_CRON_JOBS)
+        self.assertIn("job-0", data)
+
 
 if __name__ == "__main__":
     unittest.main()
