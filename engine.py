@@ -632,6 +632,27 @@ def verify_nudge_directive(edited_after_pass: bool, last_pass_turn: Optional[int
     }
 
 
+# Kinds whose NOT_BACKED verdict is high-stakes enough to interrupt the reply itself (item 27
+# surface policy, upgrade #4). Everything else still shows up in /check, just not inline.
+_INLINE_NOT_BACKED_KINDS = {"sent", "paid", "deployed", "pushed", "deleted", "scheduled"}
+
+
+def inline_worthy(v: Verdict) -> bool:
+    """True when *v* should appear in the reply's own Check line (summary_line), not only in
+    /check's full detail. STALE and FAILED are always inline-worthy regardless of kind: both
+    mean a claim the agent is actively making right now is contradicted or unproven by this
+    turn's own evidence. NOT_BACKED is inline-worthy only for the higher-stakes kinds in
+    _INLINE_NOT_BACKED_KINDS (sent, paid, deployed, pushed, deleted, scheduled); the low-stakes
+    kinds (saved, tested, committed) that drive most of item 27's real-world false alarms stay
+    out of the reply and only surface in /check, where a user who wants the detail can look.
+    BACKED is never inline-worthy (nothing to flag)."""
+    if v.status in {"STALE", "FAILED"}:
+        return True
+    if v.status == "NOT_BACKED":
+        return v.claim.kind in _INLINE_NOT_BACKED_KINDS
+    return False
+
+
 def detail_report(verdicts: list[Verdict]) -> str:
     if not verdicts:
         return "Check, Please: no completion claims found in the last reply."

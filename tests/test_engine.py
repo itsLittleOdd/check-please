@@ -256,6 +256,56 @@ class LadderFamilyScoping(unittest.TestCase):
         self.assertEqual(engine._highest_rung(evidence, engine._family_kinds("tested")), "deployed")
 
 
+class InlineWorthy(unittest.TestCase):
+    """Item 27 surface policy (upgrade #4, WALL-BREAKER ii): only the verdicts that should
+    interrupt the reply itself are inline_worthy; everything else stays /check-only."""
+
+    def test_stale_is_inline_worthy_regardless_of_kind(self):
+        v = engine.check_turn("Tests pass.", [
+            ev("terminal", {"command": "pytest -q"}, seq=1),
+            ev("write_file", {"path": "pricing.py"}, seq=2),
+        ])[0]
+        self.assertEqual(v.status, "STALE")
+        self.assertTrue(engine.inline_worthy(v))
+
+    def test_failed_is_inline_worthy_regardless_of_kind(self):
+        v = engine.check_turn("I sent it to the client.",
+                               [ev("send_message", {"to": "x"}, {"error": "bounced"}, seq=1)])[0]
+        self.assertEqual(v.status, "FAILED")
+        self.assertTrue(engine.inline_worthy(v))
+
+    def test_backed_is_never_inline_worthy(self):
+        v = engine.check_turn("Sent the update to the team.",
+                               [ev("send_message", {"to": "x"}, {"ok": True}, seq=1)])[0]
+        self.assertEqual(v.status, "BACKED")
+        self.assertFalse(engine.inline_worthy(v))
+
+    def test_not_backed_high_stakes_kinds_are_inline_worthy(self):
+        for reply, kind in [
+            ("Invoice emailed to Dana.", "sent"),
+            ("Charged the customer's card for the deposit.", "paid"),
+            ("Deployed to prod.", "deployed"),
+            ("Pushed the change.", "pushed"),
+            ("Deleted the old backups.", "deleted"),
+            ("Booked the table for 7pm.", "scheduled"),
+        ]:
+            v = engine.check_turn(reply, [])[0]
+            self.assertEqual(v.status, "NOT_BACKED")
+            self.assertEqual(v.claim.kind, kind)
+            self.assertTrue(engine.inline_worthy(v), f"{kind} should be inline-worthy")
+
+    def test_not_backed_low_stakes_kinds_are_not_inline_worthy(self):
+        for reply, kind in [
+            ("The draft is saved.", "saved"),
+            ("Tests pass.", "tested"),
+            ("Committed the fix.", "committed"),
+        ]:
+            v = engine.check_turn(reply, [])[0]
+            self.assertEqual(v.status, "NOT_BACKED")
+            self.assertEqual(v.claim.kind, kind)
+            self.assertFalse(engine.inline_worthy(v), f"{kind} should stay /check-only")
+
+
 class SavedCodeVsSavedDocument(unittest.TestCase):
     """Discovered item 19: a write_file save to a code-looking path ("saved_code") must stay in
     the code family and never prove a document claim, even though old-style "saved" used to
