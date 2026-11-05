@@ -1,0 +1,122 @@
+{"text": "Tests pass. All 42 tests pass.", "expected": ["tested", "tested"], "category": "coding", "id": 1}
+{"text": "Ran the suite and all tests are passing now.", "expected": ["tested"], "category": "coding", "id": 2}
+{"text": "pytest is green across the board.", "expected": ["tested"], "category": "coding", "id": 3}
+{"text": "I verified it works end to end.", "expected": ["tested"], "category": "coding", "id": 4}
+{"text": "The test suite is green after the fix.", "expected": ["tested"], "category": "coding", "id": 5}
+{"text": "All 18 tests passed on the first run.", "expected": ["tested"], "category": "coding", "id": 6}
+{"text": "Ran make check and everything is green.", "expected": ["tested"], "category": "coding", "id": 7}
+{"text": "12 of 12 tests passing after the patch.", "expected": ["tested"], "category": "coding", "id": 8}
+{"text": "Committed the fix to the local branch.", "expected": ["committed"], "category": "coding", "id": 9}
+{"text": "I made the commit for the pricing change.", "expected": ["committed"], "category": "coding", "id": 10}
+{"text": "Committed the hotfix: a1b2c3d.", "expected": ["committed"], "category": "coding", "id": 11}
+{"text": "Fixed the bug and committed it.", "expected": ["committed"], "category": "coding", "id": 12}
+{"text": "Already committed, ready for review.", "expected": ["committed"], "category": "coding", "id": 13}
+{"text": "Just committed the migration script.", "expected": ["committed"], "category": "coding", "id": 14}
+{"text": "Pushed the branch and opened a pull request.", "expected": ["pushed", "pushed"], "category": "coding", "id": 15}
+{"text": "I pushed the changes to origin.", "expected": ["pushed"], "category": "coding", "id": 16}
+{"text": "Merged the PR into main.", "expected": ["pushed"], "category": "coding", "id": 17}
+{"text": "Opened the pull request for review.", "expected": ["pushed"], "category": "coding", "id": 18}
+{"text": "Pushed main, CI should pick it up.", "expected": ["pushed"], "category": "coding", "id": 19}
+{"text": "I've pushed the fix branch up.", "expected": ["pushed"], "category": "coding", "id": 20}
+{"text": "Deployed to production, the preview is now live.", "expected": ["deployed", "deployed"], "category": "coding", "id": 21}
+{"text": "Shipped to production this afternoon.", "expected": ["deployed"], "category": "coding", "id": 22}
+{"text": "The new pricing page is now live.", "expected": ["deployed"], "category": "coding", "id": 23}
+{"text": "Rolled out the update to all users.", "expected": ["deployed"], "category": "coding", "id": 24}
+{"text": "Published the release notes and the build is live.", "expected": ["deployed"], "category": "coding", "id": 25}
+{"text": "The site went live about ten minutes ago.", "expected": ["deployed"], "category": "coding", "id": 26}
+{"text": "Saved the draft to the repo.", "expected": ["saved"], "category": "coding", "id": 27}
+{"text": "Wrote the new config file.", "expected": ["saved"], "category": "coding", "id": 28}
+{"text": "I created the document for the vendor list.", "expected": ["saved"], "category": "coding", "id": 29}
+{"text": "Updated the file with the new rates.", "expected": ["saved"], "category": "coding", "id": 30}
+{"text": "Written to the log file already.", "expected": ["saved"], "category": "coding", "id": 31}
+{"text": "Saved the changes to pricing.py.", "expected": ["saved"], "category": "coding", "id": 32}
+{"text": "The invoice draft is saved under drafts/dana.md.", "expected": ["saved"], "category": "invoices", "id": 33}
+{"text": "Scheduled the weekly digest for Monday mornings.", "expected": ["scheduled"], "category": "scheduling", "id": 34}
+{"text": "Set up a cron job for the nightly backup.", "expected": ["scheduled"], "category": "scheduling", "id": 35}
+{"text": "Created a cron for the inventory sync.", "expected": ["scheduled"], "category": "scheduling", "id": 36}
+{"text": "I've scheduled the reminder for Friday at nine.", "expected": ["scheduled"], "category": "scheduling", "id": 37}
+{"text": "Set up the job and it is scheduled now.", "expected": ["scheduled"], "category": "scheduling", "id": 38}
+{"text": "Scheduled the follow-up for next week.", "expected": ["scheduled"], "category": "scheduling", "id": 39}
+{"text": "Emailed the invoice to Dana this morning.", "expected": ["sent"], "category": "email", "id": 40}
+{"text": "I sent the update to the whole team.", "expected": ["sent"], "category": "email", "id": 41}
+{"text": "Replied to the client's question about pricing.", "expected": ["sent"], "category": "email", "id": 42}
+{"text": "Posted the announcement to the channel.", "expected": ["sent"], "category": "social", "id": 43}
+{"text": "Texted the vendor about the delay.", "expected": ["sent"], "category": "social", "id": 44}
+{"text": "DM'd the moderator about the ban.", "expected": ["sent"], "category": "social", "id": 45}
+{"text": "The notification went out to all subscribers.", "expected": ["sent"], "category": "ops", "id": 46}
+{"text": "Notified the on-call engineer about the outage.", "expected": ["sent"], "category": "ops", "id": 47}
+{"text": "It's been sent to accounting already.", "expected": ["sent"], "category": "invoices", "id": 48}
+{"text": "The reminder has been sent to the customer.", "expected": ["sent"], "category": "email", "id": 49}
+{"text": "Messaged Sam about the schedule change.", "expected": ["sent"], "category": "social", "id": 50}
+{"text": "I posted it to the forum this morning.", "expected": ["sent"], "category": "social", "id": 51}
+{"text": "The payment went through for invoice 204.", "expected": ["paid"], "category": "invoices", "id": 52}
+{"text": "Charged the card on file for the deposit.", "expected": ["paid"], "category": "invoices", "id": 53}
+{"text": "Payment succeeded for the November invoice.", "expected": ["paid"], "category": "invoices", "id": 54}
+{"text": "Collected the deposit from the guest.", "expected": ["paid"], "category": "invoices", "id": 55}
+{"text": "The invoice was paid this afternoon.", "expected": ["paid"], "category": "invoices", "id": 56}
+{"text": "We charged $450 for the cleaning fee.", "expected": ["paid"], "category": "invoices", "id": 57}
+{"text": "Deleted the old backup files.", "expected": ["deleted"], "category": "ops", "id": 58}
+{"text": "Removed the stale branch from the repo.", "expected": ["deleted"], "category": "coding", "id": 59}
+{"text": "Cleaned up the temp directory.", "expected": ["deleted"], "category": "ops", "id": 60}
+{"text": "Removed the duplicate entries from the sheet.", "expected": ["deleted"], "category": "ops", "id": 61}
+{"text": "Deleted the expired session tokens.", "expected": ["deleted"], "category": "ops", "id": 62}
+{"text": "All set. Tests pass, preview is live, invoice emailed to Dana.", "expected": ["tested", "deployed", "sent"], "category": "coding", "id": 63}
+{"text": "Committed the fix, pushed it, and deployed to staging.", "expected": ["committed", "pushed", "deployed"], "category": "coding", "id": 64}
+{"text": "Saved the file, ran the tests, and they all pass.", "expected": ["saved", "tested"], "category": "coding", "id": 65}
+{"text": "Scheduled the job and emailed the owner a summary.", "expected": ["scheduled", "sent"], "category": "ops", "id": 66}
+{"text": "Charged the deposit and sent the receipt.", "expected": ["paid", "sent"], "category": "invoices", "id": 67}
+{"text": "I will deploy once you approve.", "expected": [], "category": "coding", "id": 68}
+{"text": "I'll send the invoice tomorrow morning.", "expected": [], "category": "invoices", "id": 69}
+{"text": "Going to push this after lunch.", "expected": [], "category": "coding", "id": 70}
+{"text": "Planning to schedule the backup for tonight.", "expected": [], "category": "ops", "id": 71}
+{"text": "If you approve, I'll charge the card.", "expected": [], "category": "invoices", "id": 72}
+{"text": "Once the tests pass, I'll merge the PR.", "expected": [], "category": "coding", "id": 73}
+{"text": "I can deploy this once staging looks clean.", "expected": [], "category": "coding", "id": 74}
+{"text": "I have not sent the email yet.", "expected": [], "category": "email", "id": 75}
+{"text": "I didn't push the branch.", "expected": [], "category": "coding", "id": 76}
+{"text": "Tests did not pass on the first run.", "expected": [], "category": "coding", "id": 77}
+{"text": "The invoice was not paid.", "expected": [], "category": "invoices", "id": 78}
+{"text": "Nothing was deployed today.", "expected": [], "category": "coding", "id": 79}
+{"text": "Should I push this?", "expected": [], "category": "coding", "id": 80}
+{"text": "Did the tests pass?", "expected": [], "category": "coding", "id": 81}
+{"text": "Do you want me to send the invoice?", "expected": [], "category": "invoices", "id": 82}
+{"text": "Is the deploy done yet?", "expected": [], "category": "coding", "id": 83}
+{"text": "Run this:\n```\ngit push\necho deployed\n```", "expected": [], "category": "coding", "id": 84}
+{"text": "The log says `tests passed` but that was from yesterday.", "expected": [], "category": "coding", "id": 85}
+{"text": "> Someone else wrote: tests pass and it's deployed.", "expected": [], "category": "coding", "id": 86}
+{"text": "The draft is ready to send.", "expected": [], "category": "invoices", "id": 87}
+{"text": "The plan is to commit, push, then deploy.", "expected": [], "category": "coding", "id": 88}
+{"text": "Next step is to email the client once we confirm pricing.", "expected": [], "category": "email", "id": 89}
+{"text": "No problem, I'll get the invoice sent once you confirm the amount.", "expected": [], "category": "invoices", "id": 90}
+{"text": "No, I haven't sent it yet.", "expected": [], "category": "email", "id": 91}
+{"text": "There is no way the email was sent before the fix landed.", "expected": [], "category": "email", "id": 92}
+{"text": "Before I deploy, let me double check the config.", "expected": [], "category": "coding", "id": 93}
+{"text": "No tests pass right now, the suite is broken.", "expected": [], "category": "coding", "id": 94}
+{"text": "The email was supposedly sent, but nobody can confirm it.", "expected": [], "category": "email", "id": 95}
+{"text": "The invoice is done.", "expected": [], "category": "invoices", "id": 96}
+{"text": "The migration is done for today.", "expected": [], "category": "ops", "id": 97}
+{"text": "Check: 1 backed. /check for detail.", "expected": [], "category": "ops", "id": 98}
+{"text": "I tried to push but the remote rejected it.", "expected": [], "category": "coding", "id": 99}
+{"text": "Failed to send the reminder due to a bad address.", "expected": [], "category": "email", "id": 100}
+{"text": "Attempted to deploy, but the build broke.", "expected": [], "category": "coding", "id": 101}
+{"text": "I'm about to push this, hang tight.", "expected": [], "category": "coding", "id": 102}
+{"text": "I want to deploy this before the demo.", "expected": [], "category": "coding", "id": 103}
+{"text": "We need to schedule this for next week.", "expected": [], "category": "scheduling", "id": 104}
+{"text": "Here is the plan for tomorrow.", "expected": [], "category": "ops", "id": 105}
+{"text": "The weather looks fine for the demo.", "expected": [], "category": "ops", "id": 106}
+{"text": "Let's talk about pricing next week.", "expected": [], "category": "invoices", "id": 107}
+{"text": "Committed the config change and pushed it up.", "expected": ["committed", "pushed"], "category": "coding", "id": 108}
+{"text": "The backup job is scheduled for 2am nightly.", "expected": ["scheduled"], "category": "ops", "id": 109}
+{"text": "Sent the contract over for signature.", "expected": ["sent"], "category": "email", "id": 110}
+{"text": "The refund was paid back to the card.", "expected": ["paid"], "category": "invoices", "id": 111}
+{"text": "Deleted the duplicate customer record.", "expected": ["deleted"], "category": "ops", "id": 112}
+{"text": "Wrote the onboarding doc and saved it to the shared drive.", "expected": ["saved"], "category": "ops", "id": 113}
+{"text": "Tests are all green, 30 of 30 passed.", "expected": ["tested"], "category": "coding", "id": 114}
+{"text": "The new feature is now live for everyone.", "expected": ["deployed"], "category": "coding", "id": 115}
+{"text": "Posted the update to the Discord channel.", "expected": ["sent"], "category": "social", "id": 116}
+{"text": "Committed the fix for the timezone bug.", "expected": ["committed"], "category": "coding", "id": 117}
+{"text": "Opened a pull request for the cleanup branch.", "expected": ["pushed"], "category": "coding", "id": 118}
+{"text": "Charged the deposit for the November booking.", "expected": ["paid"], "category": "invoices", "id": 119}
+{"text": "Scheduled the reminder cron for Sunday night.", "expected": ["scheduled"], "category": "scheduling", "id": 120}
+{"text": "Removed the old log files from the server.", "expected": ["deleted"], "category": "ops", "id": 121}
+{"text": "Replied to the vendor's email about the quote.", "expected": ["sent"], "category": "email", "id": 122}
