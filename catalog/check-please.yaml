@@ -1,0 +1,30 @@
+name: check-please
+repo: https://github.com/TODO-owner/check-please   # TODO: real public repo URL, not created yet (no GitHub account/token use authorized for this loop)
+sha: TODO                                          # TODO: 40-char commit sha at the repo root once pushed; this loop never pushes or creates repos
+subdir: ""
+description: Pairs every "done" claim in a reply with the tool call that proves it.
+maintainer: Whalen Ventures
+tier: community
+category: tools
+requires_hermes: ">=0.22.6"
+docs_url: ""
+version: "0.1.0"
+image: ""
+screenshots: []
+readme: true
+platforms: []
+title: "Check, Please"
+onboarding: false
+known_issues:
+  - "Heuristic lexicon, English-only patterns. It cannot see webhook payload bodies, runtime-built strings, or what a delegated sub-agent did."
+  - "Held-out benchmark (150 hand-written replies, independent author): precision 0.905, recall 0.738. Own test corpus: 1.000/1.000, which only means it covers every pattern that corpus tests, not real-world performance."
+  - "Desktop pane has no proof-on-click yet and has not been smoke-tested in a real Electron Desktop window."
+capabilities:
+  provides_tools: []
+  provides_hooks:
+    - pre_llm_call
+    - post_tool_call
+    - transform_llm_output
+    - pre_verify
+  provides_middleware: []
+  requires_env: []
