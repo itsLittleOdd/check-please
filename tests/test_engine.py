@@ -65,6 +65,40 @@ class ClassifyCall(unittest.TestCase):
         self.assertEqual(ev("execute_code", {"code": "assert response.status_code == 200"}).kind, "tested")
 
 
+class DeleteScriptAndOutputEvidence(unittest.TestCase):
+    """Item 40 cause (4): a script or SQL that deletes things, or output reporting a count
+    removed, backs a deleted claim even when the command isn't the bare rm/trash shape."""
+
+    def test_script_name_says_delete(self):
+        self.assertEqual(ev("terminal", {"command": "python3 purge_old_sessions.py"}).kind, "deleted")
+        self.assertEqual(ev("terminal", {"command": "./cleanup_cache.sh"}).kind, "deleted")
+        self.assertEqual(ev("terminal", {"command": "node remove_stale_tokens.js"}).kind, "deleted")
+
+    def test_sql_delete_from(self):
+        self.assertEqual(
+            ev("terminal", {"command": "sqlite3 app.db \"DELETE FROM sessions WHERE expired=1\""}).kind,
+            "deleted")
+
+    def test_output_reports_a_removed_count_even_when_command_text_does_not_say_so(self):
+        self.assertEqual(
+            ev("terminal", {"command": "./backup.sh"}, "Removed 12 old sessions.").kind, "deleted")
+        self.assertEqual(
+            ev("terminal", {"command": "./backup.sh"}, "Deleted 3 stale files").kind, "deleted")
+
+    def test_output_count_ignored_on_failure(self):
+        self.assertIsNone(
+            ev("terminal", {"command": "./backup.sh"}, "Removed 12 old sessions.", status="error"))
+
+    def test_plain_shell_verb_in_unrelated_sentence_does_not_match(self):
+        """\"clean\" as a bare word (not a script filename) must not false-match."""
+        self.assertIsNone(ev("terminal", {"command": "echo 'please clean the kitchen'"}))
+
+    def test_execute_code_body_delete_script_call(self):
+        self.assertEqual(
+            ev("execute_code", {"code": "import subprocess\nsubprocess.run(['python3', 'purge_logs.py'])"}).kind,
+            "deleted")
+
+
 class ClassifyCallToolFamilies(unittest.TestCase):
     """One test per real Hermes tool family (names verified in the installed source)."""
 

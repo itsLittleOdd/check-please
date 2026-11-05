@@ -79,6 +79,19 @@ _SEND_CMD = re.compile(
     r"\bxurl\s+(post|reply|dm)\b|api\.(twitter|x)\.com/2/(tweets|dm)|api\.twilio\.com|api\.sendgrid\.com|api\.postmarkapp\.com", _I)
 _PAY_CMD = re.compile(r"\bstripe\b[^\n]*\b(pay|charge|capture|finalize)|api\.stripe\.com/v1/(charges|payment_intents|invoices/\S+/pay)", _I)
 _DELETE_CMD = re.compile(r"(^|[;&|]\s*)(sudo\s+)?(rm|trash|git\s+rm|rmdir)\s", _I)
+# Item 40 cause (4), bench false alarms: a script or SQL whose own name or text says it
+# deletes things is delete evidence even when it isn't the bare `rm`/`trash` shape above
+# (invented examples: "python purge_old_sessions.py", "sqlite3 app.db \"DELETE FROM logs ...\"",
+# "./cleanup_cache.sh"). Scoped to a script filename ending in a code extension so a plain
+# shell verb like "clean" in an unrelated sentence can't match; SQL DELETE FROM matched as its
+# own clause. Command/code text only, same over-credit-is-the-goal rule as _CHECK_CMD above.
+_DELETE_SCRIPT_CMD = re.compile(
+    r"\b[\w./-]*\b(delete|purge|prune|remove|cleanup|clean_up)\w*\.(py|sh|rb|js|ts|pl|bash)\b|"
+    r"\bdelete\s+from\s+\w+", _I)
+# Output evidence for a delete claim when the command text itself doesn't say so (invented
+# examples: "Removed 12 old sessions.", "Deleted 3 stale files"). Scanned on the call's result
+# text only, never on claim text.
+_DELETE_OUTPUT = re.compile(r"\b(removed|deleted)\s+\d+\b", _I)
 _SCHEDULE_CMD = re.compile(r"\bhermes\s+cron\s+(create|add|edit)\b|\bcrontab\s+-[el]?\b|\blaunchctl\s+(load|bootstrap)\b", _I)
 
 _SEND_TOOL = re.compile(r"(^|_|\.|-)(send|post|reply|tweet|email|mail|message|dm|publish_post|create_post|chat_post)", _I)
@@ -168,6 +181,8 @@ def _scan_ladder(text: str) -> Optional[str]:
             return kind
     if _CHECK_CMD.search(text):
         return "tested"
+    if _DELETE_SCRIPT_CMD.search(text):
+        return "deleted"
     return None
 
 
@@ -188,6 +203,8 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
         cmd = str(a.get("command") or a.get("cmd") or "")
         short = cmd.strip().splitlines()[0][:160] if cmd.strip() else ""
         kind = _scan_ladder(cmd)
+        if kind is None and ok and _DELETE_OUTPUT.search(str(result or "")):
+            kind = "deleted"
         return Evidence(kind, ok, name, short, seq, ts) if kind else None
 
     if low in _CODE_TEXT_TOOLS:
@@ -198,6 +215,8 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
         code = str(a.get("code") or a.get("script") or "")
         short = code.strip().splitlines()[0][:160] if code.strip() else ""
         kind = _scan_ladder(code)
+        if kind is None and ok and _DELETE_OUTPUT.search(str(result or "")):
+            kind = "deleted"
         return Evidence(kind, ok, name, short, seq, ts) if kind else None
 
     if low in _WRITE_TOOLS:
