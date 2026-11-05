@@ -341,6 +341,31 @@ _CHECK_LINE = re.compile(r"^\s*(\u2611|\[check\]|check:).*$", re.M | _I)
 _HEADING_LINE = re.compile(r"^\s{0,3}#{1,6}\s.*$", re.M)
 _TABLE_LINE = re.compile(r"^\s*\|.*\|\s*$", re.M)
 _TABLE_SEP_LINE = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$", re.M)
+# Item 40 cause (1), bench false alarms: a partial-count status ("4 of 5 tests pass",
+# "3/7 passing", "all but one green") is not a "tests pass" claim, only a note that some
+# passed. Checked on the whole sentence (not the 40-char pre-match window), since the count
+# usually sits before the matched verb phrase, outside that window (invented examples only,
+# never bench text). A whole, non-fractional count ("all 12 tests pass", "5 tests passed")
+# must still count. Equal-numerator-denominator phrasing ("12 of 12", "7/7") means everything
+# passed, not partial, so the two numbers are compared in code, not excluded by the regex
+# itself (a backreference would match equal numbers, the opposite of what is needed).
+_PARTIAL_COUNT_OF = re.compile(r"\b(\d+)\s*(?:of|out of)\s*(\d+)\b", _I)
+_PARTIAL_COUNT_SLASH = re.compile(r"\b(\d+)\s*/\s*(\d+)\b")
+_PARTIAL_COUNT_ALL_BUT = re.compile(r"\ball but (?:one|\d+)\b", _I)
+
+
+def _has_partial_count(sent: str) -> bool:
+    """True when *sent* names an uneven pass count ("4 of 5", "3/7") or an "all but"
+    exception. An equal-numbers ratio ("12 of 12") means everything passed, not partial."""
+    for pat in (_PARTIAL_COUNT_OF, _PARTIAL_COUNT_SLASH):
+        for m in pat.finditer(sent):
+            try:
+                a, b = int(m.group(1)), int(m.group(2))
+            except ValueError:
+                continue
+            if a != b:
+                return True
+    return bool(_PARTIAL_COUNT_ALL_BUT.search(sent))
 
 
 def _sentences(text: str) -> list[tuple[int, str]]:
@@ -406,6 +431,8 @@ def extract_claims(reply: str) -> list[Claim]:
         for kind, pat in _CLAIM_PATTERNS:
             m = pat.search(sent)
             if not m:
+                continue
+            if kind == "tested" and _has_partial_count(sent):
                 continue
             # Negation/future/conditional words in the 40 chars before the claim verb void it.
             window = sent[max(0, m.start() - 40):m.start()]

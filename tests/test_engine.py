@@ -239,6 +239,32 @@ class ExtractClaims(unittest.TestCase):
         self.assertEqual(self.kinds("I pushed her fix to the branch."), ["pushed"])
         self.assertEqual(self.kinds("We paid their outstanding balance in full."), ["paid"])
 
+    def test_partial_test_counts_are_not_a_tested_claim(self):
+        # Item 40 cause (1), bench false alarms: a partial pass count is a status note, not a
+        # "tests pass" claim, and must never become STALE or NOT BACKED by itself. Invented
+        # examples only, never bench text.
+        self.assertEqual(self.kinds("4 of 5 tests pass."), [])
+        self.assertEqual(self.kinds("3/7 tests are passing."), [])
+        self.assertEqual(self.kinds("All but one test passed."), [])
+        self.assertEqual(self.kinds("9 out of 10 tests passed."), [])
+
+    def test_whole_test_counts_still_count(self):
+        # The partial-count guard must not swallow a genuine whole-number pass count.
+        self.assertEqual(self.kinds("All 12 tests pass."), ["tested"])
+        self.assertEqual(self.kinds("5 tests passed."), ["tested"])
+
+    def test_equal_ratio_counts_as_whole_not_partial(self):
+        # "12 of 12" and "7/7" mean everything passed, not a partial count; only an UNEVEN
+        # ratio voids the claim. Invented examples only.
+        self.assertEqual(self.kinds("12 of 12 tests passing after the patch."), ["tested"])
+        self.assertEqual(self.kinds("7/7 tests pass."), ["tested"])
+
+    def test_partial_count_elsewhere_in_sentence_does_not_block_other_claims(self):
+        # A partial test count voids only the "tested" reading; an unrelated real claim in the
+        # same sentence must still count.
+        self.assertEqual(self.kinds("4 of 5 tests pass, and I deployed the fix to staging."),
+                         ["deployed"])
+
 
 class CheckTurn(unittest.TestCase):
     def test_demo_scenario(self):
