@@ -1,0 +1,21 @@
+name: check-please
+label: Check, Please
+kind: standalone
+version: 0.1.0
+requires_hermes: ">=0.22.6"
+description: >
+  Pairs every "done" claim in your agent's reply (sent, deployed, pushed, tests pass, saved, paid)
+  with the tool call that proves it, and appends one line saying which claims are backed, stale or
+  not backed. Deterministic: no extra model calls, no network.
+author: Whalen Ventures
+provides_hooks:
+  - pre_llm_call
+  - post_tool_call
+  - transform_llm_output
+config_schema:
+  line:
+    type: str
+    choices: [all, issues, off]
+    default: all
+    label: Check line
+    description: "all = add a line under every reply with claims; issues = only when something is not backed; off = /check only"
