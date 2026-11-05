@@ -155,23 +155,28 @@ class Claim:
 
 # (rung, pattern). Past tense / completed state only.
 _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p in [
-    ("paid", r"\b(paid|charged|payment (went through|succeeded|processed|collected))\b"),
+    ("paid", r"\b(paid|charged|payment (went through|succeeded|processed|collected)|"
+             r"collected (the |an? )?(deposit|payment|rent|fee))\b"),
     ("sent", r"\b(sent|emailed|e-mailed|texted|messaged|dm'?d|replied to|posted (it|this|that|the|a|an|to|in|on)\b|"
              r"notified|delivered (it|the|to)|it'?s been sent|has been sent|have been sent|went out|is out the door)"),
-    ("deployed", r"\b(deployed|is (now )?live|went live|now live|shipped to prod(uction)?|published|released|rolled out)\b"),
+    ("deployed", r"\b(deployed|is (now )?live|went live|now live|shipped to prod(uction)?|"
+                 r"published(?!\s+(the\s+)?release\s+notes?\b)|released|rolled out)\b"),
     ("pushed", r"\b(pushed|merged|opened (a|the) (pr|pull request))\b"),
     ("committed", r"\b(committed|made (a|the) commit)\b"),
     ("tested", r"\b(tests? (now )?(pass|passed|passing|are passing|all pass|green|succeeded)|all (tests )?green|"
-               r"test suite (passes|passed|is green)|verified (it )?works|all \d+ tests pass(ed)?|\d+ (of \d+ )?tests? pass(ed|ing)?)\b"),
-    ("scheduled", r"\b(scheduled|set up (a|the) (cron|job|reminder)|created (a|the) cron)\b"),
+               r"test suite (passes|passed|is green)|verified (it )?works|all \d+ tests pass(ed)?|\d+ (of \d+ )?tests? pass(ed|ing)?|"
+               r"pytest (is )?(green|passing|passed)|ran (pytest|the tests?|make check|npm test|go test|cargo test|jest|mocha))\b"),
+    ("scheduled", r"\b(scheduled|set up (a|the) (cron(\s+job)?|reminder)|created (a|the) cron)\b"),
     ("deleted", r"\b(deleted|removed (the|it|them|those|these|that)|cleaned up)\b"),
     ("saved", r"\b(saved|wrote (the|it|a|an|to)|written to|created (the|a|an) (file|draft|doc|document)|updated (the )?file)\b"),
 ]]
 
 _NEGATION = re.compile(
     r"\b(not|n't|never|nothing|no|none|no longer|haven'?t|hasn'?t|didn'?t|won'?t|will|would|could|should|can|cannot|can'?t|"
-    r"ready to|about to|going to|plan to|want to|need to|needs to|if you|once you|after you|before|"
-    r"draft|unless|until|try to|tried to|attempted|failed to|unable)\b", _I)
+    r"ready to|about to|going to|plan to|want to|need to|needs to|if you|once|after you|before|"
+    r"unless|until|try to|tried to|attempted|failed to|unable|supposedly|allegedly|apparently|reportedly|supposed to|"
+    r"draft(ing)?\s+(a|an|the|it|this|up)|to draft|will draft)\b"
+    r"|'ll\b", _I)
 _QUESTION = re.compile(r"\?\s*$")
 _CODE_FENCE = re.compile(r"```.*?```", re.S)
 _INLINE_CODE = re.compile(r"`[^`\n]*`")
@@ -179,31 +184,41 @@ _QUOTE_LINE = re.compile(r"^\s*>.*$", re.M)
 _CHECK_LINE = re.compile(r"^\s*(\u2611|\[check\]|check:).*$", re.M | _I)
 
 
-def _sentences(text: str) -> list[str]:
+def _sentences(text: str) -> list[tuple[int, str]]:
     text = _CODE_FENCE.sub(" ", text or "")
     text = _QUOTE_LINE.sub(" ", text)
     text = _CHECK_LINE.sub(" ", text)
     text = _INLINE_CODE.sub("CODE", text)
     parts = re.split(r"(?<=[.!?])\s+|\n+|(?<=:)\s+(?=[-*\u2022])|^\s*[-*\u2022]\s+", text, flags=re.M)
-    out: list[str] = []
-    for p in parts:
+    out: list[tuple[int, str]] = []
+    for gi, p in enumerate(parts):
         p = p.strip(" -*\u2022\t")
         if not p:
             continue
         # Clause split so "Tests pass, preview is live and invoice emailed" yields three claims.
         # A question keeps its "?" on every clause so none of it reads as a claim.
+        # gi groups clauses from the same original sentence, so two clauses of one sentence
+        # claiming the same rung (e.g. "Published the notes and the build is live") dedup to one.
         q = p.rstrip().endswith("?")
         for c in re.split(r",\s+|;\s+|\s+and\s+(?=\w)", p):
             c = c.strip(" ,;")
             if c:
-                out.append(c + ("?" if q and not c.endswith("?") else ""))
+                out.append((gi, c + ("?" if q and not c.endswith("?") else "")))
     return out
+
+
+# Kinds where two clauses of one sentence restate the same single action rather than
+# proving it twice (e.g. "Wrote the doc and saved it" is one save, not two). Other rungs
+# (pushed, deployed, sent...) keep per-clause counting: "Deployed to prod, the preview is
+# live" is read as two separate completed claims, same as the corpus expects.
+_ONE_PER_SENTENCE = {"saved"}
 
 
 def extract_claims(reply: str) -> list[Claim]:
     claims: list[Claim] = []
-    seen: set[tuple[str, str]] = set()
-    for sent in _sentences(reply):
+    seen_text: set[tuple[str, str]] = set()
+    seen_group: set[tuple[int, str]] = set()
+    for gi, sent in _sentences(reply):
         if _QUESTION.search(sent):
             continue
         for kind, pat in _CLAIM_PATTERNS:
@@ -214,10 +229,13 @@ def extract_claims(reply: str) -> list[Claim]:
             window = sent[max(0, m.start() - 40):m.start()]
             if _NEGATION.search(window):
                 continue
-            key = (kind, sent.lower())
-            if key in seen:
+            if kind in _ONE_PER_SENTENCE and (gi, kind) in seen_group:
                 continue
-            seen.add(key)
+            text_key = (kind, sent.lower())
+            if text_key in seen_text:
+                continue
+            seen_group.add((gi, kind))
+            seen_text.add(text_key)
             claims.append(Claim(kind, sent[:200], m.group(0)))
             break  # one claim per sentence: the highest-stakes rung listed first
     return claims
