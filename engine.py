@@ -319,12 +319,22 @@ _CODE_FENCE = re.compile(r"```.*?```", re.S)
 _INLINE_CODE = re.compile(r"`[^`\n]*`")
 _QUOTE_LINE = re.compile(r"^\s*>.*$", re.M)
 _CHECK_LINE = re.compile(r"^\s*(\u2611|\[check\]|check:).*$", re.M | _I)
+# WALL-BREAKER part (i), first slice (item 27): a claim word inside a markdown heading or a
+# table row is a label or a data cell, not a sentence someone is asserting as done (invented
+# examples: "## Deployed\n" as a section title, "| sent | 2026-11-05 |" as a table row). Strip
+# both before sentence splitting, same treatment as _QUOTE_LINE/_CODE_FENCE already get.
+_HEADING_LINE = re.compile(r"^\s{0,3}#{1,6}\s.*$", re.M)
+_TABLE_LINE = re.compile(r"^\s*\|.*\|\s*$", re.M)
+_TABLE_SEP_LINE = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$", re.M)
 
 
 def _sentences(text: str) -> list[tuple[int, str]]:
     text = _CODE_FENCE.sub(" ", text or "")
     text = _QUOTE_LINE.sub(" ", text)
     text = _CHECK_LINE.sub(" ", text)
+    text = _HEADING_LINE.sub(" ", text)
+    text = _TABLE_SEP_LINE.sub(" ", text)
+    text = _TABLE_LINE.sub(" ", text)
     text = _INLINE_CODE.sub("CODE", text)
     parts = re.split(r"(?<=[.!?])\s+|\n+|(?<=:)\s+(?=[-*\u2022])|^\s*[-*\u2022]\s+", text, flags=re.M)
     out: list[tuple[int, str]] = []

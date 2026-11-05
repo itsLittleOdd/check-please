@@ -178,6 +178,22 @@ class ExtractClaims(unittest.TestCase):
     def test_existing_check_line_ignored(self):
         self.assertEqual(self.kinds("Check: 1 backed. /check for detail."), [])
 
+    def test_heading_lines_ignored(self):
+        # WALL-BREAKER part (i) first slice (item 27): a claim word as a section title is a
+        # label, not an assertion. Invented examples only.
+        self.assertEqual(self.kinds("## Deployed\nSee the notes below for details."), [])
+        self.assertEqual(self.kinds("### Sent\n\n- item one\n- item two"), [])
+        # A real claim right after a heading still counts; only the heading line itself drops.
+        self.assertEqual(self.kinds("## Status\nI deployed the fix to staging."), ["deployed"])
+
+    def test_table_rows_ignored(self):
+        # Invented example: a status table whose cells happen to contain claim words.
+        text = "| step | status |\n| --- | --- |\n| deploy | sent |\n| backup | paid |\n"
+        self.assertEqual(self.kinds(text), [])
+        # A real claim in prose around the table still counts.
+        self.assertEqual(self.kinds("Tests pass.\n| step | status |\n| --- | --- |\n| deploy | sent |\n"),
+                         ["tested"])
+
 
 class CheckTurn(unittest.TestCase):
     def test_demo_scenario(self):
