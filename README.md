@@ -65,4 +65,26 @@ hermes plugins doctor . --ci
 hermes plugins validate .
 ```
 
+## Desktop pane data path
+
+The Desktop pane (`desktop/plugin.js`) reads the focused session's claim history through
+this package's own backend namespace, never by reading a file from the renderer or reaching
+into another plugin's data:
+
+1. `__init__.py`'s `on_transform_llm_output` writes every turn's verdicts to `ctx.state` under
+   the key `last_reply`, keyed by session id, as `engine.claims_payload(verdicts)` (`{"claims":
+   [...], "backed": int, "total": int}`).
+2. `dashboard/plugin_api.py` exposes `GET /claims?session_id=<id>` and `GET /jobs`, mounted at
+   `/api/plugins/check-please/`. It reads the same state through
+   `hermes_cli.plugins_state.PluginState("check-please")`, the same class `ctx.state` wraps, so
+   the backend route and the agent-side hooks always agree on one on-disk source.
+3. `desktop/plugin.js` calls `ctx.rest('/claims?session_id=...')` on load and on a 4-second
+   poll, addressed to `host.state.focusedSessionId`. An unknown session, or the backend half
+   being disabled, returns the same empty shape the pane already renders as "no claims checked
+   yet", never a guessed or stale row.
+
+The backend half (`dashboard/plugin_api.py`) only works when this plugin's Python half is
+enabled in `config.yaml`'s `plugins.enabled` list (see "The Python side" in the Desktop Plugin
+SDK docs). A renderer-only enable of the desktop half does not import it.
+
 License: MIT.

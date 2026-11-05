@@ -400,6 +400,28 @@ def apply_cross_turn_stale(verdicts: list[Verdict], edited_since_pass: bool, not
     return out
 
 
+def verdict_to_dict(v: Verdict) -> dict:
+    """One verdict as a JSON-safe plain dict (backlog item 11 data path: the Desktop pane and
+    any plugin_api.py backend route read this shape, never a Verdict/Claim object directly)."""
+    return {
+        "kind": v.claim.kind,
+        "text": v.claim.text,
+        "phrase": v.claim.phrase,
+        "status": v.status,
+        "note": v.note,
+        "proof": (v.proof.detail or v.proof.tool) if v.proof is not None else None,
+    }
+
+
+def claims_payload(verdicts: list[Verdict]) -> dict:
+    """The whole last-reply report as one JSON-safe dict: claims plus a backed/total tally.
+    This is the exact shape persisted to ctx.state under "last_reply" and served by
+    dashboard/plugin_api.py's GET /claims route for the Desktop pane (backlog item 11)."""
+    claims = [verdict_to_dict(v) for v in verdicts]
+    backed = sum(1 for v in verdicts if v.status == "BACKED")
+    return {"claims": claims, "backed": backed, "total": len(verdicts)}
+
+
 def tally_cron_job(tally: dict, job_id: str, job_name: str, verdicts: list[Verdict]) -> dict:
     """Fold *verdicts* into *tally*'s per-job claim/backed/not-backed counts (backlog item 7).
 

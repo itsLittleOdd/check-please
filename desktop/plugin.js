@@ -1,11 +1,41 @@
 // Check, Please — Desktop pane + status-bar chip.
 // SDK surface only: @hermes/plugin-sdk, react, react/jsx-runtime. No app DOM reach, no raw bridge.
 //
-// Data note (backlog item 11): this pane has no wired data source yet. It renders
-// an honest empty state rather than inventing claim rows. The documented route
-// (plugin API or ctx.state) lands in item 11; this slice is the pane shell only.
-import { host, haptic, STATUSBAR_AREAS } from '@hermes/plugin-sdk'
+// Data path (backlog item 11): ctx.rest('/claims?session_id=...') reaches this package's own
+// dashboard/plugin_api.py route, which reads the plugin's ctx.state ("last_reply", written every
+// turn by __init__.py's on_transform_llm_output) through hermes_cli.plugins_state.PluginState.
+// No file reads from the renderer, no reach into another plugin's data.
+import { host, haptic, useValue, STATUSBAR_AREAS } from '@hermes/plugin-sdk'
+import { useEffect, useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
+
+const EMPTY = { claims: [], backed: 0, total: 0 }
+const POLL_MS = 4000 // ctx.socket has no server-push side here yet; poll is the documented fallback.
+
+// Shared poll: both the pane and the chip want the same focused-session payload, so one hook
+// (used by each component) avoids two independent ctx.rest calls firing every tick.
+function useClaims(ctx) {
+  const sessionId = useValue(host.state.focusedSessionId)
+  const [data, setData] = useState(EMPTY)
+
+  useEffect(() => {
+    if (!sessionId) {
+      setData(EMPTY)
+      return
+    }
+    let live = true
+    const load = () => {
+      ctx.rest(`/claims?session_id=${encodeURIComponent(sessionId)}`)
+        .then(result => { if (live) setData(result && typeof result === 'object' ? result : EMPTY) })
+        .catch(() => { if (live) setData(EMPTY) }) // backend half off/unavailable: honest empty state, not a crash
+    }
+    load()
+    const id = setInterval(load, POLL_MS)
+    return () => { live = false; clearInterval(id) }
+  }, [ctx, sessionId])
+
+  return data
+}
 
 const VERDICT_STYLES = {
   BACKED: { label: 'BACKED', color: 'var(--ui-positive, #2e7d32)' },
@@ -18,7 +48,9 @@ function verdictStyle(verdict) {
 }
 
 function ClaimRow({ claim }) {
-  const style = verdictStyle(claim.verdict)
+  // claim.status matches engine.claims_payload()'s key exactly (BACKED | STALE | NOT_BACKED |
+  // FAILED); FAILED falls through to the NOT_BACKED style via verdictStyle's default.
+  const style = verdictStyle(claim.status)
   return jsxs('div', {
     className: 'flex items-center justify-between gap-2 border-b border-(--ui-border) px-2 py-1.5 text-sm',
     children: [
@@ -33,9 +65,8 @@ function ClaimRow({ claim }) {
   })
 }
 
-function CheckPane() {
-  // Placeholder empty state until item 11 wires a real data route.
-  const claims = []
+function CheckPane({ ctx }) {
+  const { claims } = useClaims(ctx)
 
   return jsxs('div', {
     className: 'flex h-full flex-col overflow-y-auto p-2 text-sm',
@@ -46,15 +77,13 @@ function CheckPane() {
             className: 'px-2 py-3 text-(--ui-text-tertiary)',
             children: 'No claims checked yet this session.'
           })
-        : jsx('div', { children: claims.map(c => jsx(ClaimRow, { key: c.id, claim: c })) })
+        : jsx('div', { children: claims.map((c, i) => jsx(ClaimRow, { key: `${c.kind}-${i}`, claim: c })) })
     ]
   })
 }
 
-function CheckChip() {
-  // No wired tally yet (item 11); shows a neutral placeholder rather than a fake count.
-  const backed = 0
-  const total = 0
+function CheckChip({ ctx }) {
+  const { backed, total } = useClaims(ctx)
   return jsx('button', {
     type: 'button',
     className: 'px-1.5 text-[0.6875rem] text-(--ui-text-tertiary)',
@@ -80,13 +109,13 @@ export default {
       area: 'panes',
       title: 'Check, Please',
       data: { placement: 'right', width: '280px' },
-      render: () => jsx(CheckPane, {})
+      render: () => jsx(CheckPane, { ctx })
     })
     ctx.register({
       id: 'chip',
       area: STATUSBAR_AREAS.right,
       order: 130,
-      render: () => jsx(CheckChip, {})
+      render: () => jsx(CheckChip, { ctx })
     })
   }
 }

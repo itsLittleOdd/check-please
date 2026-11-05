@@ -48,6 +48,13 @@ _CRON_TALLY_MEM: dict[str, dict] = {}
 _DAILY_MEM: dict[str, dict] = {}
 _MAX_DAYS = 14
 
+# Last-reply verdicts per session, persisted to ctx.state (backlog item 11 data path): the
+# Desktop pane's dashboard/plugin_api.py route reads this exact key through the same
+# hermes_cli.plugins_state.PluginState class ctx.state wraps, never a raw file read from the
+# renderer and never this in-process module. _LAST (above) stays the in-memory copy /check
+# itself reads; this is the durable, cross-process-readable twin of the same data.
+_LAST_REPLY_MEM: dict[str, dict] = {}
+
 
 def _session(sid: Any) -> str:
     return str(sid or "")
@@ -115,6 +122,35 @@ def _save_daily(daily: dict) -> None:
             logger.debug("check-please daily log write failed", exc_info=True)
     _DAILY_MEM.clear()
     _DAILY_MEM.update(daily)
+
+
+def _load_last_reply() -> dict:
+    ctx = _ctx_box.get("ctx")
+    if ctx is not None:
+        try:
+            return dict(ctx.state.get("last_reply", default={}) or {})
+        except Exception:
+            logger.debug("check-please last-reply read failed", exc_info=True)
+    return dict(_LAST_REPLY_MEM)
+
+
+def _save_last_reply(sid: str, payload: dict) -> None:
+    with _LOCK:
+        data = _load_last_reply()
+        data[sid] = payload
+        if len(data) > _MAX_SESSIONS:
+            for old in list(data)[: len(data) - _MAX_SESSIONS]:
+                if old != sid:
+                    data.pop(old, None)
+        ctx = _ctx_box.get("ctx")
+        if ctx is not None:
+            try:
+                ctx.state.set("last_reply", data)
+                return
+            except Exception:
+                logger.debug("check-please last-reply write failed", exc_info=True)
+        _LAST_REPLY_MEM.clear()
+        _LAST_REPLY_MEM.update(data)
 
 
 def _reset_turn(sid: str, turn: Any = None) -> None:
@@ -240,6 +276,7 @@ def on_transform_llm_output(response_text: str = "", session_id: Any = None, **k
         with _LOCK:
             _LAST[sid] = verdicts
             _LAST_SESSION[0] = sid
+        _save_last_reply(sid, engine.claims_payload(verdicts))
         if mode == "off" or not verdicts:
             return None
         if mode == "issues" and all(v.status == "BACKED" for v in verdicts):

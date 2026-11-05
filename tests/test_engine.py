@@ -426,6 +426,59 @@ class PluginHooks(unittest.TestCase):
         m.on_transform_llm_output(response_text="Pushed the branch.", session_id=sid)
         self.assertEqual(m._load_cron_tally(), {})
 
+    def test_last_reply_persists_to_ctx_state_for_the_desktop_pane(self):
+        """Backlog item 11: every turn's claims_payload lands in ctx.state under "last_reply",
+        keyed by session id, in the exact shape dashboard/plugin_api.py's GET /claims route
+        returns. Proven here through a stubbed ctx.state, same contract as the cross-turn and
+        cron-tally records above."""
+        m = self.mod
+
+        class _StubState:
+            def __init__(self):
+                self._d = {}
+
+            def get(self, key, default=None):
+                return self._d.get(key, default)
+
+            def set(self, key, value):
+                self._d[key] = value
+
+        class _StubCtx:
+            def __init__(self):
+                self.state = _StubState()
+
+            def current_cron_execution(self):
+                return None
+
+        m._ctx_box["ctx"] = _StubCtx()
+        try:
+            sid = "s-pane-1"
+            m.on_pre_llm_call(session_id=sid, turn_id="t1")
+            m.on_post_tool_call(tool_name="terminal", args={"command": "pytest -q"},
+                                result={"exit_code": 0}, session_id=sid)
+            m.on_transform_llm_output(response_text="Tests pass. I emailed Dana the invoice.", session_id=sid)
+            stored = m._load_last_reply()
+            self.assertIn(sid, stored)
+            self.assertEqual(stored[sid]["total"], 2)
+            self.assertEqual(stored[sid]["backed"], 1)
+            kinds = {row["kind"] for row in stored[sid]["claims"]}
+            self.assertEqual(kinds, {"tested", "sent"})
+        finally:
+            m._ctx_box["ctx"] = None
+
+    def test_last_reply_falls_back_to_memory_with_no_ctx(self):
+        """No ctx at all (plain unit test, or a plugin host that hasn't registered yet) still
+        records the last reply, just in the module's in-memory fallback, same pattern as the
+        cross-turn record's _CROSS_MEM."""
+        m = self.mod
+        m._ctx_box["ctx"] = None
+        sid = "s-pane-no-ctx"
+        m.on_pre_llm_call(session_id=sid, turn_id="t1")
+        m.on_transform_llm_output(response_text="Pushed the branch.", session_id=sid)
+        stored = m._load_last_reply()
+        self.assertIn(sid, stored)
+        self.assertEqual(stored[sid]["total"], 1)
+
     def test_check_today_reports_counts_and_non_backed(self):
         """Backlog item 8: /check today logs every turn's claims, cron or not."""
         m = self.mod
@@ -557,6 +610,41 @@ class VerifyNudgeDirective(unittest.TestCase):
         self.assertIn("turn 2", directive["message"])
         self.assertIn("pytest -q", directive["message"])
         self.assertIn("rerun", directive["message"].lower())
+
+
+class ClaimsPayloadSerialization(unittest.TestCase):
+    """Backlog item 11: the exact JSON shape persisted to ctx.state and served by
+    dashboard/plugin_api.py's GET /claims route for the Desktop pane."""
+
+    def test_backed_claim_shape(self):
+        verdicts = engine.check_turn("Tests pass.", [ev("terminal", {"command": "pytest -q"}, seq=1)])
+        payload = engine.claims_payload(verdicts)
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(payload["backed"], 1)
+        row = payload["claims"][0]
+        self.assertEqual(row["kind"], "tested")
+        self.assertEqual(row["status"], "BACKED")
+        self.assertEqual(row["proof"], "pytest -q")
+        self.assertEqual(row["note"], "")
+
+    def test_not_backed_claim_has_no_proof_and_a_note(self):
+        verdicts = engine.check_turn("I emailed Dana the invoice.", [])
+        payload = engine.claims_payload(verdicts)
+        row = payload["claims"][0]
+        self.assertEqual(row["status"], "NOT_BACKED")
+        self.assertIsNone(row["proof"])
+        self.assertIn("no sent call", row["note"])
+
+    def test_no_claims_is_the_pane_empty_state(self):
+        payload = engine.claims_payload(engine.check_turn("Here is the plan.", []))
+        self.assertEqual(payload, {"claims": [], "backed": 0, "total": 0})
+
+    def test_every_value_is_json_serializable(self):
+        verdicts = engine.check_turn(
+            "Tests pass. I emailed Dana the invoice.",
+            [ev("terminal", {"command": "pytest -q"}, seq=1)],
+        )
+        json.dumps(engine.claims_payload(verdicts))  # raises on anything non-JSON-safe
 
 
 if __name__ == "__main__":
