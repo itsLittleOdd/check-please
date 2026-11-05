@@ -17,7 +17,7 @@ title: "Check, Please"
 onboarding: false
 known_issues:
   - "Heuristic lexicon, English-only patterns. It cannot see webhook payload bodies, runtime-built strings, or what a delegated sub-agent did."
-  - "Held-out benchmark (150 hand-written replies, independent author): precision 0.905, recall 0.738. Own test corpus: 1.000/1.000, which only means it covers every pattern that corpus tests, not real-world performance."
+  - "Held-out benchmark (150 hand-written replies, independent author): precision 0.908, recall 0.768, confirmed 2026-11-05. Two kinds (tested, scheduled) are still below a 0.70 per-kind recall floor. Own test corpus scores near 1.000, which only means it covers every pattern that corpus tests, not real-world performance."
   - "Desktop pane has no proof-on-click yet and has not been smoke-tested in a real Electron Desktop window."
 capabilities:
   provides_tools: []
