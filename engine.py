@@ -267,18 +267,21 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
                r"ran successfully|executed successfully|the output (checks out|matches)|matches the expected output|"
                r"passed with flying colors|lgtm|looks (solid|good to go)|0 (issues|errors|failures)\b|0 failures\b|"
                r"exits? (cleanly|0)\b|no (data )?(race|issue|error|failure|bug|regression)s? (detected|found)\b)\b"),
-    ("scheduled", r"\b(scheduled|set up (a|the) (cron(\s+job)?|reminder)|created (a|the) cron|booked (the|an?|your)|"
+    ("scheduled", r"\b(scheduled|set up (a|the) (cron(\s+job)?|reminder|recurring\b)|created (a|the) cron|booked\s+(the|an?|your|\w+s)\b|"
                   r"added\b.{0,60}?\bto (your |the )?calendar\b|set a reminder|added a reminder|"
                   r"(calendar event|appointment|reservation|meeting|flight|hotel|table|room) (created|added|booked|reserved|confirmed|is booked|was booked|has been booked)|"
-                  r"(is|was|has been) booked|put it on (your |the )?calendar|"
+                  r"(is|was|has been) booked|put (it|a|the|\d+[- ]\w+)\b.{0,20}\bon (your |the |family |team |work )?calendar|"
+                  r"created (a|the)\b.{0,40}\bcalendar\b|"
                   r"reserved (a |the )?(table|room|spot|seat)|confirmed the (reservation|booking|appointment)|rsvp'?d|"
                   r"on (your |the )?calendar now|added (it |this )?to (your |the )?schedule|lined up (a|the) (meeting|call)|"
-                  r"(job|task|cron) (now )?runs? (daily|weekly|every|on a schedule)|is (now )?running on a schedule|"
+                  r"(job|task|cron)?\s*(now )?runs? (daily|weekly|every|on (a|the) schedule|on the first\b)|is (now )?running on a schedule|"
+                  r"is set to (run|repeat|fire)\b|repeats? (daily|weekly|every)\b|has a cron trigger\b|"
                   r"(is |it'?s )?set for (today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week|\d)|"
-                  r"you'?re all set for|it'?s on (your |the )?calendar|locked in (a|the) (meeting|call|time|slot|spot|appointment)|got you (a spot|down for)|"
+                  r"you'?re all set for|(it'?s|is|are) on (your |the |family |team |work )?calendar|locked in (a|the) (meeting|call|time|slot|spot|appointment)|got you (a spot|down for)|"
                   r"grabbed you a spot|reservation is set|times? (are |is )?confirmed|meeting is locked in|"
-                  r"slot is held|you'?re booked in|"
-                  r"cron (entry|job) added|added (a |the )?cron (entry|job)|(reminder|alarm|timer)\b.{0,15}\b(set|started|created)\b|"
+                  r"slot is held|you'?re booked in|you'?ll get a ping\b|"
+                  r"cron (entry|job) added|added (a |the )?cron (entry|job)|(reminder|alarm|timer)\b.{0,40}\b(set|started|created)\b|"
+                  r"(started|created|set)\s+(a|the)\b.{0,25}\b(timer|alarm|reminder)\b|"
                   r"queued\b.{0,40}\bfor (today|tomorrow|tonight|next \w+|this \w+)\b|"
                   r"now runs? every (day|week|weekday|weekend|month|hour|\d+)|calendar invite\b)\b"),
     ("deleted", r"\b(deleted|removed (the|it|them|those|these|that)|cleaned up)\b"),
@@ -291,6 +294,7 @@ _NEGATION = re.compile(
     r"\b(not|n't|never|nothing|no|none|no longer|haven'?t|hasn'?t|didn'?t|won'?t|will|would|could|should|can|cannot|can'?t|"
     r"ready to|about to|going to|plan to|want to|need to|needs to|if you|once|after you|before|"
     r"unless|until|try to|tried to|attempted|failed to|unable|supposedly|allegedly|apparently|reportedly|supposed to|"
+    r"you\s+already|'s\s+\w+\s+already|was\s+already\b|"
     r"draft(ing)?\s+(a|an|the|it|this|up)|to draft|will draft)\b"
     r"|'ll\b", _I)
 _QUESTION = re.compile(r"\?\s*$")
@@ -329,11 +333,18 @@ def _sentences(text: str) -> list[tuple[int, str]]:
 # live" is read as two separate completed claims, same as the corpus expects.
 _ONE_PER_SENTENCE = {"saved", "tested"}
 
+# "scheduled" claims restate across sentence boundaries more than any other kind (a booking
+# sentence is almost always followed by a confirmation sentence: "Booked the table... It's on
+# your calendar now"), and no corpus case (own or dev) ever expects two distinct "scheduled"
+# claims from one reply, so this one dedups per whole reply, not just per sentence group.
+_ONE_PER_REPLY = {"scheduled"}
+
 
 def extract_claims(reply: str) -> list[Claim]:
     claims: list[Claim] = []
     seen_text: set[tuple[str, str]] = set()
     seen_group: set[tuple[int, str]] = set()
+    seen_kind_reply: set[str] = set()
     for gi, sent in _sentences(reply):
         if _QUESTION.search(sent):
             continue
@@ -347,10 +358,13 @@ def extract_claims(reply: str) -> list[Claim]:
                 continue
             if kind in _ONE_PER_SENTENCE and (gi, kind) in seen_group:
                 continue
+            if kind in _ONE_PER_REPLY and kind in seen_kind_reply:
+                continue
             text_key = (kind, sent.lower())
             if text_key in seen_text:
                 continue
             seen_group.add((gi, kind))
+            seen_kind_reply.add(kind)
             seen_text.add(text_key)
             claims.append(Claim(kind, sent[:200], m.group(0)))
             break  # one claim per sentence: the highest-stakes rung listed first
