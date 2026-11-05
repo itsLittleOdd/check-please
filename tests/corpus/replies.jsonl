@@ -120,3 +120,21 @@
 {"text": "Scheduled the reminder cron for Sunday night.", "expected": ["scheduled"], "category": "scheduling", "id": 120}
 {"text": "Removed the old log files from the server.", "expected": ["deleted"], "category": "ops", "id": 121}
 {"text": "Replied to the vendor's email about the quote.", "expected": ["sent"], "category": "email", "id": 122}
+{"text": "Checks all pass, green on my end.", "expected": ["tested"], "category": "coding", "id": 123}
+{"text": "CI is green now, build passed.", "expected": ["tested"], "category": "coding", "id": 124}
+{"text": "I verified it end to end before telling you.", "expected": ["tested"], "category": "coding", "id": 125}
+{"text": "QA signed off and linting passed.", "expected": ["tested", "tested"], "category": "coding", "id": 126}
+{"text": "Booked the appointment for next Tuesday at 10am.", "expected": ["scheduled"], "category": "scheduling", "id": 127}
+{"text": "Added it to your calendar for Friday.", "expected": ["scheduled"], "category": "scheduling", "id": 128}
+{"text": "Set a reminder for the renewal date.", "expected": ["scheduled"], "category": "scheduling", "id": 129}
+{"text": "The appointment is booked for 3pm.", "expected": ["scheduled"], "category": "scheduling", "id": 130}
+{"text": "The notes have been saved to the shared drive.", "expected": ["saved"], "category": "ops", "id": 131}
+{"text": "Changes are saved, nothing lost.", "expected": ["saved"], "category": "coding", "id": 132}
+{"text": "The draft was autosaved a minute ago.", "expected": ["saved"], "category": "coding", "id": 133}
+{"text": "Pushed back the deadline to Friday.", "expected": [], "category": "scheduling", "id": 134}
+{"text": "I pushed for approval from the vendor.", "expected": [], "category": "ops", "id": 135}
+{"text": "My phone was charged overnight.", "expected": [], "category": "ops", "id": 136}
+{"text": "She was charged with a late fee last month before we fixed it.", "expected": [], "category": "invoices", "id": 137}
+{"text": "He paid attention to the feedback but hasn't made changes yet.", "expected": [], "category": "ops", "id": 138}
+{"text": "The invoice has been paid in full.", "expected": ["paid"], "category": "invoices", "id": 139}
+{"text": "Charged your card for the deposit.", "expected": ["paid"], "category": "invoices", "id": 140}

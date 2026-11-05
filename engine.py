@@ -190,20 +190,31 @@ class Claim:
 
 # (rung, pattern). Past tense / completed state only.
 _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p in [
-    ("paid", r"\b(paid|charged|payment (went through|succeeded|processed|collected)|"
-             r"collected (the |an? )?(deposit|payment|rent|fee))\b"),
+    ("paid", r"\b(paid(?!\s+(attention|off|vacation|leave|time off|internship))|"
+             r"charged (the |your |his |her |their |an? )?(card|customer|client|account|deposit|rent|fee|balance)\b|charged \$\d+|"
+             r"payment (went through|succeeded|processed|collected)|"
+             r"collected (the |an? )?(deposit|payment|rent|fee)|"
+             r"(invoice|bill|deposit|rent|fee|balance) (is|was|has been|have been) (paid|charged))\b"),
     ("sent", r"\b(sent|emailed|e-mailed|texted|messaged|dm'?d|replied to|posted (it|this|that|the|a|an|to|in|on)\b|"
              r"notified|delivered (it|the|to)|it'?s been sent|has been sent|have been sent|went out|is out the door)"),
     ("deployed", r"\b(deployed|is (now )?live|went live|now live|shipped to prod(uction)?|"
                  r"published(?!\s+(the\s+)?release\s+notes?\b)|released|rolled out)\b"),
-    ("pushed", r"\b(pushed|merged|opened (a|the) (pr|pull request))\b"),
+    ("pushed", r"\b(pushed(?!\s+(back|off|through|aside|for\b))|merged|opened (a|the) (pr|pull request))\b"),
     ("committed", r"\b(committed|made (a|the) commit)\b"),
     ("tested", r"\b(tests? (now )?(pass|passed|passing|are passing|all pass|green|succeeded)|all (tests )?green|"
-               r"test suite (passes|passed|is green)|verified (it )?works|all \d+ tests pass(ed)?|\d+ (of \d+ )?tests? pass(ed|ing)?|"
-               r"pytest (is )?(green|passing|passed)|ran (pytest|the tests?|make check|npm test|go test|cargo test|jest|mocha))\b"),
-    ("scheduled", r"\b(scheduled|set up (a|the) (cron(\s+job)?|reminder)|created (a|the) cron)\b"),
+               r"test suite (passes|passed|is green)|verified (it )?(works|end to end)|all \d+ tests pass(ed)?|\d+ (of \d+ )?tests? pass(ed|ing)?|"
+               r"pytest (is )?(green|passing|passed)|ran (pytest|the tests?|make check|npm test|go test|cargo test|jest|mocha)|"
+               r"(all )?checks? (all )?(pass|passed|passing|green)|ci (is )?green|ci/cd (pipeline )?(passed|green)|"
+               r"build (is )?green|(is|it'?s) green on (my|our) end|suite is green|qa (passed|signed off)|"
+               r"lint(ing)? (passed|clean)|(unit |integration )?tests? (are )?(all )?green)\b"),
+    ("scheduled", r"\b(scheduled|set up (a|the) (cron(\s+job)?|reminder)|created (a|the) cron|booked (the|an?|your)|"
+                  r"added (it |that )?to (your |the )?calendar|set a reminder|added a reminder|"
+                  r"(calendar event|appointment|reservation|meeting) (created|added|booked|is booked|was booked|has been booked)|"
+                  r"(is|was|has been) booked|put it on (your |the )?calendar)\b"),
     ("deleted", r"\b(deleted|removed (the|it|them|those|these|that)|cleaned up)\b"),
-    ("saved", r"\b(saved|wrote (the|it|a|an|to)|written to|created (the|a|an) (file|draft|doc|document)|updated (the )?file)\b"),
+    ("saved", r"\b(saved|wrote (the|it|a|an|to)|written to|created (the|a|an) (file|draft|doc|document)|updated (the )?file|"
+              r"(has|have) been saved|was saved|is saved|persisted (it|the data|to disk)|stored (it|the data)|"
+              r"changes? (are |is )?(now )?saved|autosaved)\b"),
 ]]
 
 _NEGATION = re.compile(
