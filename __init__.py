@@ -237,7 +237,7 @@ def on_post_tool_call(tool_name: str = "", args: Any = None, result: Any = None,
             rec["edited_after_pass"] = False
             rec["pass_detail"] = ev.detail or ev.tool
             _save_cross_record(sid, rec)
-        elif ev.ok and ev.kind in {"saved", "drafted"}:
+        elif ev.ok and ev.kind in {"saved", "drafted", "saved_code"}:
             rec = _cross_record(sid)
             if rec["last_pass_turn"] is not None and rec["turn_num"] > rec["last_pass_turn"]:
                 rec["edited_after_pass"] = True

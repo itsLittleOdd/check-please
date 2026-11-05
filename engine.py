@@ -6,8 +6,8 @@ Two halves:
   2. extract_claims(): find past-tense "done" claims in the agent's final reply.
 check_turn() pairs each claim with the evidence recorded during the same turn.
 
-State ladder (low to high): drafted < saved < tested < committed < pushed < deployed < sent < paid.
-A claim only counts at the rung the tool log proves.
+State ladder (low to high): drafted < saved < saved_code < tested < committed < pushed <
+deployed < sent < paid. A claim only counts at the rung the tool log proves.
 """
 from __future__ import annotations
 
@@ -16,13 +16,18 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-LADDER = ["drafted", "saved", "tested", "committed", "pushed", "deployed", "scheduled", "sent", "paid", "deleted"]
+LADDER = ["drafted", "saved", "saved_code", "tested", "committed", "pushed", "deployed",
+          "scheduled", "sent", "paid", "deleted"]
 
 # Ladder families: "proven: X" should only cite evidence from the same claim's own ladder,
 # never an unrelated family's higher rung (Discovered item 18). A deploy proves nothing about
 # whether an invoice was sent; a commit proves nothing about whether a meeting was scheduled.
+# "saved_code" (a write_file/patch to a code-looking path) sits in the code family, not the
+# document family, so editing pricing.py never "proves" an unrelated invoice save (Discovered
+# item 18's logged residual: a non-draft write_file still read as generic "saved" regardless
+# of file content).
 _LADDER_FAMILIES = (
-    ("code", ("tested", "committed", "pushed", "deployed")),
+    ("code", ("saved_code", "tested", "committed", "pushed", "deployed")),
     ("document", ("drafted", "saved", "scheduled", "sent", "paid")),
 )
 
@@ -72,6 +77,26 @@ _SCHEDULE_CMD = re.compile(r"\bhermes\s+cron\s+(create|add|edit)\b|\bcrontab\s+-
 _SEND_TOOL = re.compile(r"(^|_|\.|-)(send|post|reply|tweet|email|mail|message|dm|publish_post|create_post|chat_post)", _I)
 _WRITE_TOOLS = {"write_file", "patch", "edit_file", "str_replace", "create_file", "apply_patch", "file_write", "replace_in_file"}
 _DRAFT_TOOL = re.compile(r"draft", _I)
+# Source/config file extensions: a write_file/patch to one of these is "saved_code" (code
+# family), not generic "saved" (document family) — see Discovered item 18's logged residual.
+# Deliberately excludes .md/.txt/.html (those are usually documents, not code, even though an
+# .html file can be code; a path-extension heuristic cannot be perfect, only better than nothing).
+_CODE_EXTENSIONS = {
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".go", ".rs", ".java", ".kt", ".swift",
+    ".c", ".h", ".cpp", ".cc", ".hpp", ".cs", ".rb", ".php", ".sh", ".bash", ".zsh", ".sql",
+    ".yaml", ".yml", ".json", ".toml", ".ini", ".cfg", ".css", ".scss", ".graphql", ".proto",
+    ".lua", ".pl", ".r", ".scala", ".clj", ".ex", ".exs", ".vue",
+}
+
+
+def _is_code_path(path: str) -> bool:
+    low = path.lower().rsplit("?", 1)[0].rsplit("#", 1)[0]
+    for ext in _CODE_EXTENSIONS:
+        if low.endswith(ext):
+            return True
+    return False
+
+
 _READONLY_HINT = re.compile(r"(^|_)(list|get|read|search|fetch|view|show|describe|status|query)(_|$)", _I)
 
 
@@ -168,7 +193,12 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
 
     if low in _WRITE_TOOLS:
         path = str(a.get("path") or a.get("file_path") or a.get("filename") or "")
-        kind = "drafted" if re.search(r"(^|/)drafts?/|draft", path, _I) else "saved"
+        if re.search(r"(^|/)drafts?/|draft", path, _I):
+            kind = "drafted"
+        elif _is_code_path(path):
+            kind = "saved_code"
+        else:
+            kind = "saved"
         return Evidence(kind, ok, name, path[:160], seq, ts)
 
     if low in {"cronjob", "cron", "schedule", "cronjob_manage"}:
@@ -370,7 +400,7 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
         if good:
             proof = good[-1]
             if claim.kind == "tested":
-                later_writes = [e for e in evidence if e.kind in {"saved", "drafted"} and e.ok and e.seq > proof.seq]
+                later_writes = [e for e in evidence if e.kind in {"saved", "drafted", "saved_code"} and e.ok and e.seq > proof.seq]
                 if later_writes:
                     verdicts.append(Verdict(claim, "STALE", proof, rung,
                                             f"tests passed, then {later_writes[-1].detail or 'a file'} changed with no run since"))

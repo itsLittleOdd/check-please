@@ -29,8 +29,9 @@ class ClassifyCall(unittest.TestCase):
         self.assertEqual(ev("mcp__gmail__create_draft", {"to": "a@b.c"}).kind, "drafted")
 
     def test_file_writes(self):
-        self.assertEqual(ev("write_file", {"path": "src/app.py"}).kind, "saved")
+        self.assertEqual(ev("write_file", {"path": "src/app.py"}).kind, "saved_code")
         self.assertEqual(ev("write_file", {"path": "drafts/invoice-dana.md"}).kind, "drafted")
+        self.assertEqual(ev("write_file", {"path": "notes/meeting.md"}).kind, "saved")
 
     def test_blocked_status_is_failure(self):
         self.assertFalse(ev("send_message", {"to": "x"}, {"ok": True}, status="blocked").ok)
@@ -171,10 +172,13 @@ class CheckTurn(unittest.TestCase):
         self.assertIn("1 backed", line)
         self.assertIn("1 stale", line)
         self.assertIn("1 not backed", line)
-        # Item 18 regression: the invoice (document family) is unproven by the unrelated
-        # deploy (code family); the correct cite is the invoice's own "saved" evidence.
+        # Item 18 regression (and its intra-family follow-up fix): pricing.py's edit is now
+        # "saved_code" (code family), so it can no longer outrank the invoice's own "drafted"
+        # evidence (document family) just because "saved" used to sit above "drafted" on a
+        # shared ladder. The correct cite is the invoice's own drafted evidence, not a
+        # same-rung-looking but unrelated code save.
         not_backed = next(v for v in verdicts if v.status == "NOT_BACKED")
-        self.assertIn("proven: saved", not_backed.note)
+        self.assertIn("proven: drafted", not_backed.note)
         self.assertNotIn("deployed", not_backed.note)
 
     def test_failed_send(self):
@@ -228,6 +232,44 @@ class LadderFamilyScoping(unittest.TestCase):
         self.assertEqual(engine._highest_rung(evidence), "deployed")
         self.assertEqual(engine._highest_rung(evidence, engine._family_kinds("sent")), "drafted")
         self.assertEqual(engine._highest_rung(evidence, engine._family_kinds("tested")), "deployed")
+
+
+class SavedCodeVsSavedDocument(unittest.TestCase):
+    """Discovered item 19: a write_file save to a code-looking path ("saved_code") must stay in
+    the code family and never prove a document claim, even though old-style "saved" used to
+    outrank "drafted" on one shared ladder (item 18's logged residual: a non-draft write_file
+    still read as generic "saved" regardless of file content)."""
+
+    def test_code_save_does_not_outrank_document_draft(self):
+        evidence = [
+            ev("write_file", {"path": "pricing.py"}, seq=1),               # saved_code, code family
+            ev("write_file", {"path": "drafts/invoice-dana.md"}, seq=2),   # drafted, document family
+        ]
+        verdicts = engine.check_turn("Invoice emailed to Dana.", evidence)
+        self.assertEqual(verdicts[0].status, "NOT_BACKED")
+        self.assertEqual(verdicts[0].proven_rung, "drafted")
+
+    def test_document_save_still_backs_a_saved_claim(self):
+        evidence = [ev("write_file", {"path": "notes/meeting.md"}, seq=1)]
+        verdicts = engine.check_turn("Saved the meeting notes.", evidence)
+        self.assertEqual(verdicts[0].status, "BACKED")
+
+    def test_code_save_does_not_back_a_saved_claim(self):
+        # "saved_code" is not in _BACKS["saved"], so a code edit alone cannot BACK a document
+        # "saved" claim either (not just the rung-citation fix above).
+        evidence = [ev("write_file", {"path": "pricing.py"}, seq=1)]
+        verdicts = engine.check_turn("Saved the pricing update.", evidence)
+        self.assertEqual(verdicts[0].status, "NOT_BACKED")
+
+    def test_code_save_still_makes_a_tested_claim_stale(self):
+        # The item 6 cross-turn/same-turn STALE check keys on {"saved","drafted","saved_code"};
+        # a code-file save must still flag a later "tests pass" claim as stale.
+        evidence = [
+            ev("terminal", {"command": "pytest -q"}, seq=1),
+            ev("write_file", {"path": "engine.py"}, seq=2),
+        ]
+        verdicts = engine.check_turn("Tests pass.", evidence)
+        self.assertEqual(verdicts[0].status, "STALE")
 
 
 class TallyCronJob(unittest.TestCase):
