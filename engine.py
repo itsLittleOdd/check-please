@@ -354,6 +354,17 @@ def extract_claims(reply: str) -> list[Claim]:
     seen_group: set[tuple[int, str]] = set()
     seen_kind_reply: set[str] = set()
     for gi, sent in _sentences(reply):
+        # A clause that opens with a bare "or" continues an earlier clause's scope, almost
+        # always a negated or conditional list split by the comma/semicolon splitter above
+        # (item 27 family (c), invented shape: "I haven't filed it, or sent anything" ->
+        # splitting on the comma drops "haven't" out of the "sent" clause's own 40-char
+        # window, so the fragment reads as a bare completed "sent" claim). It is never a
+        # freestanding claim on its own, so drop it outright rather than guessing whether the
+        # clause it continues was negated (a broader "carry negation across every clause"
+        # rule risks voiding genuinely separate claims after "but", e.g. "I haven't tested
+        # the login flow, but I pushed the fix and deployed it" — not attempted this tick).
+        if re.match(r"^or\b", sent, _I):
+            continue
         if _QUESTION.search(sent):
             continue
         for kind, pat in _CLAIM_PATTERNS:

@@ -172,3 +172,6 @@
 {"text": "They said the deploy went out on their side, so I can't confirm it here.", "expected": [], "category": "ops", "id": 173}
 {"text": "Charged the customer's card for the deposit.", "expected": ["paid"], "category": "billing", "id": 174}
 {"text": "Committed the fix and pushed it to main.", "expected": ["committed", "pushed"], "category": "coding", "id": 175}
+{"text": "I haven't filed the report yet, or sent anything to the client.", "expected": [], "category": "ops", "id": 176}
+{"text": "I haven't booked the flight, or reserved the hotel either.", "expected": [], "category": "ops", "id": 177}
+{"text": "Deployed to staging, or so the logs say.", "expected": ["deployed"], "category": "ops", "id": 178}
