@@ -119,7 +119,7 @@ class RealHookHarnessTest(unittest.TestCase):
         self.assertTrue(transformed, "transform_llm_output returned no replacement text")
         self.assertIn("Done, tests pass.", transformed)
         self.assertIn("Check:", transformed)
-        self.assertIn("BACKED", transformed)
+        self.assertIn("1 backed", transformed)
 
     def test_claim_with_no_matching_tool_call_is_not_backed(self):
         manager = self.plugins.get_plugin_manager()
@@ -135,7 +135,7 @@ class RealHookHarnessTest(unittest.TestCase):
         )
         transformed = next((r for r in results if isinstance(r, str)), "")
         self.assertTrue(transformed)
-        self.assertIn("NOT BACKED", transformed)
+        self.assertIn("1 not backed", transformed)
 
 
 if __name__ == "__main__":
