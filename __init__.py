@@ -37,9 +37,47 @@ _settings: dict[str, Any] = {"line": "all"}   # all | issues | off
 _ctx_box: dict[str, Any] = {"ctx": None}
 _CROSS_MEM: dict[str, dict] = {}
 
+# Per-cron-job claim tally (backlog item 7): job_id -> {"job_name","claims","backed","not_backed"}.
+# Same ctx.state-with-in-memory-fallback pattern as the cross-turn record above.
+_CRON_TALLY_MEM: dict[str, dict] = {}
+
 
 def _session(sid: Any) -> str:
     return str(sid or "")
+
+
+def _current_cron() -> Any:
+    """ctx.current_cron_execution() if available, else None. Never raises (backlog item 7)."""
+    ctx = _ctx_box.get("ctx")
+    if ctx is None:
+        return None
+    try:
+        return ctx.current_cron_execution()
+    except Exception:
+        logger.debug("check-please current_cron_execution failed", exc_info=True)
+        return None
+
+
+def _load_cron_tally() -> dict:
+    ctx = _ctx_box.get("ctx")
+    if ctx is not None:
+        try:
+            return dict(ctx.state.get("cron_tally", default={}) or {})
+        except Exception:
+            logger.debug("check-please cron tally read failed", exc_info=True)
+    return dict(_CRON_TALLY_MEM)
+
+
+def _save_cron_tally(tally: dict) -> None:
+    ctx = _ctx_box.get("ctx")
+    if ctx is not None:
+        try:
+            ctx.state.set("cron_tally", tally)
+            return
+        except Exception:
+            logger.debug("check-please cron tally write failed", exc_info=True)
+    _CRON_TALLY_MEM.clear()
+    _CRON_TALLY_MEM.update(tally)
 
 
 def _reset_turn(sid: str, turn: Any = None) -> None:
@@ -149,6 +187,12 @@ def on_transform_llm_output(response_text: str = "", session_id: Any = None, **k
             note = (f"tests passed in turn {rec['last_pass_turn']} ({rec['pass_detail']}), "
                     "code changed since, no rerun this turn")
             verdicts = engine.apply_cross_turn_stale(verdicts, True, note)
+        run = _current_cron()
+        if run is not None and verdicts:
+            with _LOCK:
+                tally = _load_cron_tally()
+                engine.tally_cron_job(tally, str(run.job_id), str(run.job_name), verdicts)
+                _save_cron_tally(tally)
         with _LOCK:
             _LAST[sid] = verdicts
             _LAST_SESSION[0] = sid

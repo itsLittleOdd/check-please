@@ -186,6 +186,32 @@ class CheckTurn(unittest.TestCase):
         self.assertEqual(engine.summary_line(engine.check_turn("Here is the plan.", [])), "")
 
 
+class TallyCronJob(unittest.TestCase):
+    def test_folds_claims_into_job_row(self):
+        tally = {}
+        verdicts = engine.check_turn(
+            "Tests pass. Deployed it.",
+            [ev("terminal", {"command": "pytest -q"}, seq=1)],
+        )
+        engine.tally_cron_job(tally, "job-1", "Nightly QA", verdicts)
+        self.assertEqual(tally["job-1"], {"job_name": "Nightly QA", "claims": 2, "backed": 1, "not_backed": 1})
+
+    def test_accumulates_across_calls_same_job(self):
+        tally = {}
+        v1 = engine.check_turn("Sent the update.", [ev("send_message", {"to": "x"}, {"ok": True}, seq=1)])
+        v2 = engine.check_turn("Pushed the branch.", [])
+        engine.tally_cron_job(tally, "job-1", "Nightly QA", v1)
+        engine.tally_cron_job(tally, "job-1", "Nightly QA", v2)
+        self.assertEqual(tally["job-1"]["claims"], 2)
+        self.assertEqual(tally["job-1"]["backed"], 1)
+        self.assertEqual(tally["job-1"]["not_backed"], 1)
+
+    def test_empty_verdicts_leaves_tally_untouched(self):
+        tally = {}
+        engine.tally_cron_job(tally, "job-1", "Nightly QA", [])
+        self.assertEqual(tally, {})
+
+
 class PluginHooks(unittest.TestCase):
     def setUp(self):
         import importlib.util
@@ -252,6 +278,68 @@ class PluginHooks(unittest.TestCase):
         # not a stale one: nothing to be stale about.
         self.assertIn("1 not backed", out2)
         self.assertNotIn("stale", out2)
+
+    def test_cron_tally_tags_reply_with_job_and_updates_per_job_counts(self):
+        """Backlog item 7: when ctx.current_cron_execution() returns a run, the turn's claims
+        fold into a per-job tally (claims/backed/not_backed) keyed on job_id, kept across turns
+        via a stubbed ctx.state (same persistence contract as the cross-turn record)."""
+        m = self.mod
+
+        class _StubState:
+            def __init__(self):
+                self._d = {}
+
+            def get(self, key, default=None):
+                return self._d.get(key, default)
+
+            def set(self, key, value):
+                self._d[key] = value
+
+        class _StubRun:
+            job_id = "job-7"
+            job_name = "Nightly QA"
+
+        class _StubCtx:
+            def __init__(self):
+                self.state = _StubState()
+
+            def current_cron_execution(self):
+                return _StubRun()
+
+        m._ctx_box["ctx"] = _StubCtx()
+        try:
+            sid = "s-cron-1"
+            m.on_pre_llm_call(session_id=sid, turn_id="t1")
+            m.on_post_tool_call(tool_name="terminal", args={"command": "pytest -q"},
+                                result={"exit_code": 0}, session_id=sid)
+            out = m.on_transform_llm_output(response_text="Tests pass. Deployed it.", session_id=sid)
+            self.assertIn("backed", out)
+            tally = m._load_cron_tally()
+            self.assertIn("job-7", tally)
+            self.assertEqual(tally["job-7"]["job_name"], "Nightly QA")
+            self.assertEqual(tally["job-7"]["claims"], 2)  # tested (backed) + deployed (not backed)
+            self.assertEqual(tally["job-7"]["backed"], 1)
+            self.assertEqual(tally["job-7"]["not_backed"], 1)
+
+            # A second turn's claims accumulate onto the same job row.
+            sid2 = "s-cron-2"
+            m.on_pre_llm_call(session_id=sid2, turn_id="t1")
+            m.on_transform_llm_output(response_text="Sent the email.", session_id=sid2)
+            tally2 = m._load_cron_tally()
+            self.assertEqual(tally2["job-7"]["claims"], 3)
+            self.assertEqual(tally2["job-7"]["not_backed"], 2)
+        finally:
+            m._ctx_box["ctx"] = None
+
+    def test_no_cron_run_means_no_tally_write(self):
+        """Outside cron (ctx.current_cron_execution() is None, the default with no ctx at all),
+        the tally stays untouched: tagging is cron-only."""
+        m = self.mod
+        m._ctx_box["ctx"] = None
+        sid = "s-no-cron"
+        m.on_pre_llm_call(session_id=sid, turn_id="t1")
+        m.on_transform_llm_output(response_text="Pushed the branch.", session_id=sid)
+        self.assertEqual(m._load_cron_tally(), {})
 
 
 if __name__ == "__main__":

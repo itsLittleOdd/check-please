@@ -400,6 +400,25 @@ def apply_cross_turn_stale(verdicts: list[Verdict], edited_since_pass: bool, not
     return out
 
 
+def tally_cron_job(tally: dict, job_id: str, job_name: str, verdicts: list[Verdict]) -> dict:
+    """Fold *verdicts* into *tally*'s per-job claim/backed/not-backed counts (backlog item 7).
+
+    *tally* is job_id -> {"job_name", "claims", "backed", "not_backed"}; "not_backed" counts
+    anything other than BACKED (STALE and FAILED are not-yet-proven for this purpose, same as
+    NOT_BACKED). Mutates and returns *tally* so callers can persist it as-is via ctx.state."""
+    if not verdicts:
+        return tally
+    row = tally.setdefault(job_id, {"job_name": job_name, "claims": 0, "backed": 0, "not_backed": 0})
+    row["job_name"] = job_name or row["job_name"]
+    for v in verdicts:
+        row["claims"] += 1
+        if v.status == "BACKED":
+            row["backed"] += 1
+        else:
+            row["not_backed"] += 1
+    return tally
+
+
 def detail_report(verdicts: list[Verdict]) -> str:
     if not verdicts:
         return "Check, Please: no completion claims found in the last reply."
