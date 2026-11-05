@@ -1,5 +1,11 @@
 """Demo rig for Check, Please (backlog item 13).
 
+Lives under tests/, not the shipped plugin tree, so `hermes plugins validate` never scans
+it for private core imports (catalog rule 9) even though it deliberately imports
+hermes_cli.plugins read-only, the same seam tests/test_hermes_integration.py already uses.
+Moved here from demo/run_demo.py in backlog item 21 for exactly that reason; it is not
+plugin code and is never loaded by discover_and_load.
+
 Reproduces the storyboard scenario from Wren's IDEAS.md ("Check, Please: 83 seconds",
 shots 3-6) through the real Hermes hook path: PluginManager.invoke_hook, the same dispatch
 run_agent.py and the gateway use, no model in the loop. One command, real output, no
@@ -17,7 +23,7 @@ Scenario (invented names only):
 Prints the exact "Check:" line transform_llm_output appends, then the /check detail report
 for that same turn, both through handle_check -> engine, same functions a real turn uses.
 
-Usage: python3 demo/run_demo.py
+Usage: python3 tests/demo_hermes.py
 Exits 0 with the scenario output printed, or exits 1 with one line explaining that this
 host's ~/.hermes/hermes-agent checkout has no importable dev dependencies (ruamel.yaml,
 hermes_cli), the same gap the real-hook integration test skips on cleanly. Set
@@ -61,7 +67,7 @@ def run() -> int:
             "Demo rig needs the Hermes dev venv (hermes_cli + ruamel.yaml), not found at "
             f"{HERMES_AGENT_HOME}. Run under that interpreter, e.g.:\n"
             '  "$(ls ~/.hermes/installs/*/environments/*/venv/bin/python | head -1)" '
-            "demo/run_demo.py",
+            "tests/demo_hermes.py",
             file=sys.stderr,
         )
         return 1
