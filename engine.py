@@ -242,20 +242,21 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
              r"payment (went through|succeeded|processed|collected)|"
              r"collected (the |an? )?(deposit|payment|rent|fee)|"
              r"(invoice|bill|deposit|rent|fee|balance) (is|was|has been|have been) (paid|charged))\b"),
-    ("sent", r"\b(sent|emailed|e-mailed|texted|messaged|dm'?d|replied to|posted (it|this|that|the|a|an|to|in|on)\b|"
+    ("sent", r"\b(sent(?!\s+\w*\s*(a |an |the )?calendar invite)|emailed|e-mailed|texted|messaged|dm'?d|replied to|posted (it|this|that|the|a|an|to|in|on)\b|"
              r"notified|delivered (it|the|to)|it'?s been sent|has been sent|have been sent|went out|is out the door)"),
     ("deployed", r"\b(deployed|is (now )?live|went live|now live|shipped to prod(uction)?|"
                  r"published(?!\s+(the\s+)?release\s+notes?\b)|released|rolled out)\b"),
     ("pushed", r"\b(pushed(?!\s+(back|off|through|aside|for\b|myself|hard|notifications?\b|a notification\b|the button\b))|"
                r"merged(?=\b.{0,40}(\bpr\b|pull request|branch|into main|into master|the changes|the code|the feature))|"
-               r"opened (a|the) (pr|pull request))\b"),
+               r"opened (a |an |the )?(pr\b|pull request))\b"),
     ("committed", r"\b(committed|made (a|the) commit)\b"),
     ("tested", r"\b(tests? (now )?(pass|passed|passing|are passing|all pass|green|succeeded|clean|clear)|all (tests )?green|"
-               r"test suite (passes|passed|is green)|(verified|validated|confirmed|double[- ]checked) (it |this |the (fix|change|output|behavior|behaviour) )?(works|working|end to end|fine|now|fixed|resolved|is correct)\b|"
-               r"all \d+ tests pass(ed)?|\d+ (of \d+ )?tests? pass(ed|ing)?|"
+               r"(\w+ )?suite (passes|passed|is green)|(verified|validated|confirmed|double[- ]checked|retested|checked)\b.{0,40}?\b(works|working|end to end|fine|now|fixed|resolved|is correct|gone|cleanly|clean)\b|"
+               r"all \d+ tests pass(ed)?|\d+ (of \d+ )?tests? pass(ed|ing)?|all (\d+ )?pass(ed|ing)?\b|\d+ passed\b|"
+               r"passes? (its |their |all )?(unit |integration |regression |the )?tests?\b|every (one|single one) passes?\b|"
                r"pytest (is )?(green|passing|passed)|ran (pytest|the tests?|make check|npm test|go test|cargo test|jest|mocha)|"
                r"(all )?checks? (all )?(pass|passed|passing|green)|ci (is )?green|ci/cd (pipeline )?(passed|green)|"
-               r"build (is )?green|(is|it'?s) green on (my|our) end|suite is green|qa (passed|signed off)|"
+               r"build (is )?green|(is|it'?s) green( on (my|our) end| now|[.,:;]|$)|suite is green|qa (passed|signed off)|"
                r"lint(ing)? (passed|clean)|(unit |integration |regression )?tests? (are )?(all )?green|"
                r"no (test )?failures|zero failures|clean test run|100% (test )?pass rate|"
                r"double[- ]checked|manually tested|smoke tested|sanity check(ed)?|spot[- ]checked|"
@@ -264,18 +265,22 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
                r"no errors( came up| found)?|ran clean|runs clean|it compiles|compiles cleanly|nothing broke|"
                r"no complaints( from (the )?linter)?|no issues? (found|came up)|ran without (any )?issues?|"
                r"ran successfully|executed successfully|the output (checks out|matches)|matches the expected output|"
-               r"passed with flying colors|lgtm|looks (solid|good to go))\b"),
+               r"passed with flying colors|lgtm|looks (solid|good to go)|0 (issues|errors|failures)\b|0 failures\b|"
+               r"exits? (cleanly|0)\b|no (data )?(race|issue|error|failure|bug|regression)s? (detected|found)\b)\b"),
     ("scheduled", r"\b(scheduled|set up (a|the) (cron(\s+job)?|reminder)|created (a|the) cron|booked (the|an?|your)|"
-                  r"added (it |that )?to (your |the )?calendar|set a reminder|added a reminder|"
+                  r"added\b.{0,60}?\bto (your |the )?calendar\b|set a reminder|added a reminder|"
                   r"(calendar event|appointment|reservation|meeting|flight|hotel|table|room) (created|added|booked|reserved|confirmed|is booked|was booked|has been booked)|"
                   r"(is|was|has been) booked|put it on (your |the )?calendar|"
                   r"reserved (a |the )?(table|room|spot|seat)|confirmed the (reservation|booking|appointment)|rsvp'?d|"
                   r"on (your |the )?calendar now|added (it |this )?to (your |the )?schedule|lined up (a|the) (meeting|call)|"
                   r"(job|task|cron) (now )?runs? (daily|weekly|every|on a schedule)|is (now )?running on a schedule|"
-                  r"(is |it'?s )?set for (today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week)|"
+                  r"(is |it'?s )?set for (today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week|\d)|"
                   r"you'?re all set for|it'?s on (your |the )?calendar|locked in (a|the) (meeting|call|time|slot|spot|appointment)|got you (a spot|down for)|"
                   r"grabbed you a spot|reservation is set|times? (are |is )?confirmed|meeting is locked in|"
-                  r"slot is held|you'?re booked in)\b"),
+                  r"slot is held|you'?re booked in|"
+                  r"cron (entry|job) added|added (a |the )?cron (entry|job)|(reminder|alarm|timer)\b.{0,15}\b(set|started|created)\b|"
+                  r"queued\b.{0,40}\bfor (today|tomorrow|tonight|next \w+|this \w+)\b|"
+                  r"now runs? every (day|week|weekday|weekend|month|hour|\d+)|calendar invite\b)\b"),
     ("deleted", r"\b(deleted|removed (the|it|them|those|these|that)|cleaned up)\b"),
     ("saved", r"\b(saved|wrote (the|it|a|an|to)|written to|created (the|a|an) (file|draft|doc|document)|updated (the )?file|"
               r"(has|have) been saved|was saved|is saved|persisted (it|the data|to disk)|stored (it|the data)|"
@@ -322,7 +327,7 @@ def _sentences(text: str) -> list[tuple[int, str]]:
 # proving it twice (e.g. "Wrote the doc and saved it" is one save, not two). Other rungs
 # (pushed, deployed, sent...) keep per-clause counting: "Deployed to prod, the preview is
 # live" is read as two separate completed claims, same as the corpus expects.
-_ONE_PER_SENTENCE = {"saved"}
+_ONE_PER_SENTENCE = {"saved", "tested"}
 
 
 def extract_claims(reply: str) -> list[Claim]:

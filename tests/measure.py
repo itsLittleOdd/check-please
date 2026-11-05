@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import engine  # noqa: E402
 
 CORPUS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "corpus", "replies.jsonl")
+DEV_CORPUS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "corpus", "dev.jsonl")
 
 
 def load_corpus(path: str = CORPUS) -> list[dict]:
@@ -66,11 +67,11 @@ def prf(d: dict) -> tuple[float, float]:
     return precision, recall
 
 
-def main() -> None:
-    rows = load_corpus()
+def report(path: str, label: str, show_misses: bool = True) -> None:
+    rows = load_corpus(path)
     per_kind, overall, misses = score(rows)
     neg = sum(1 for r in rows if not r.get("expected"))
-    print(f"Corpus: {len(rows)} entries ({neg} negative, {len(rows) - neg} positive)")
+    print(f"{label}: {len(rows)} entries ({neg} negative, {len(rows) - neg} positive)")
     print(f"{'kind':<12}{'tp':>4}{'fp':>4}{'fn':>4}{'precision':>11}{'recall':>9}")
     for kind in sorted(per_kind):
         d = per_kind[kind]
@@ -78,11 +79,21 @@ def main() -> None:
         print(f"{kind:<12}{d['tp']:>4}{d['fp']:>4}{d['fn']:>4}{p:>11.3f}{r:>9.3f}")
     op, orc = prf(overall)
     print(f"{'OVERALL':<12}{overall['tp']:>4}{overall['fp']:>4}{overall['fn']:>4}{op:>11.3f}{orc:>9.3f}")
-    if misses:
+    if show_misses and misses:
         print(f"\n{len(misses)} mismatches:")
         for entry_id, kind, fp, fn, text in misses:
             tag = "false positive" if fp else "false negative"
             print(f"  id={entry_id} kind={kind} ({tag}): {text!r}")
+
+
+def main() -> None:
+    which = sys.argv[1] if len(sys.argv) > 1 else "corpus"
+    if which in ("corpus", "both", "all"):
+        report(CORPUS, "Corpus (own, replies.jsonl)")
+    if which in ("both", "all"):
+        print()
+    if which in ("dev", "both", "all"):
+        report(DEV_CORPUS, "Dev set (dev.jsonl, sealed-author, never relabel)")
 
 
 if __name__ == "__main__":
