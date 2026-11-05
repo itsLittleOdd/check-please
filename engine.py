@@ -270,6 +270,8 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
                r"passed with flying colors|lgtm|looks (solid|good to go)|0 (issues|errors|failures)\b|0 failures\b|"
                r"exits? (cleanly|0)\b|no (data )?(race|issue|error|failure|bug|regression)s? (detected|found)\b|"
                r"(also|still) (passes?|passed)\b|\d+ (now )?green\b|specs? (pass(ed)?|green)\b|went green\b|"
+               r"go vet (is )?clean\b|\w+ check passes?\b|"
+               r"checked (it|this) in \w+( and \w+)?\b.{0,20}\b(works?|worked)\b|"
                r"\b(regression |unit |integration |smoke |coverage )?tests?\b.{0,25}\bpasses?\b)\b"),
     ("scheduled", r"\b(scheduled|set up (a|the) (cron(\s+job)?|reminder|recurring\b)|created (a|the) cron|booked\s+(the|an?|your|\w+s)\b|"
                   r"added\b.{0,80}?\b(to|on) (your |the )?calendar\b|set a reminder|added a reminder|"
