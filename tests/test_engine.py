@@ -476,6 +476,88 @@ class PluginHooks(unittest.TestCase):
         finally:
             m._ctx_box["ctx"] = None
 
+    def test_pre_verify_nudges_when_coding_and_tests_predate_latest_edit(self):
+        """Backlog item 9: tests passed turn 1, code edited turn 2, no rerun; the pre_verify
+        gate for turn 2 should return hooks.md's exact continue-directive shape."""
+        m = self.mod
+        sid = "s-verify-1"
+        m.on_pre_llm_call(session_id=sid, turn_id="t1")
+        m.on_post_tool_call(tool_name="terminal", args={"command": "pytest -q"},
+                            result={"exit_code": 0}, session_id=sid)
+        m.on_transform_llm_output(response_text="Tests pass.", session_id=sid)
+
+        m.on_pre_llm_call(session_id=sid, turn_id="t2")
+        m.on_post_tool_call(tool_name="write_file", args={"path": "engine.py"},
+                            result={"ok": True}, session_id=sid)
+        directive = m.on_pre_verify(session_id=sid, platform="cli", model="x", coding=True,
+                                    attempt=0, final_response="Done.", changed_paths=["engine.py"])
+        self.assertEqual(directive["action"], "continue")
+        self.assertIsInstance(directive["message"], str)
+        self.assertTrue(directive["message"])
+
+    def test_pre_verify_is_noop_outside_coding_or_on_later_attempts_or_with_no_stale_pass(self):
+        m = self.mod
+        sid = "s-verify-2"
+        m.on_pre_llm_call(session_id=sid, turn_id="t1")
+        m.on_post_tool_call(tool_name="terminal", args={"command": "pytest -q"},
+                            result={"exit_code": 0}, session_id=sid)
+        m.on_transform_llm_output(response_text="Tests pass.", session_id=sid)
+        m.on_pre_llm_call(session_id=sid, turn_id="t2")
+        m.on_post_tool_call(tool_name="write_file", args={"path": "engine.py"},
+                            result={"ok": True}, session_id=sid)
+        # Not a coding turn: no nudge.
+        self.assertIsNone(m.on_pre_verify(session_id=sid, coding=False, attempt=0,
+                                          changed_paths=["engine.py"]))
+        # Already nudged once this turn (attempt > 0): no second nudge.
+        self.assertIsNone(m.on_pre_verify(session_id=sid, coding=True, attempt=1,
+                                          changed_paths=["engine.py"]))
+        # A session with no prior pass recorded at all has nothing stale to flag.
+        sid2 = "s-verify-3"
+        m.on_pre_llm_call(session_id=sid2, turn_id="t1")
+        m.on_post_tool_call(tool_name="write_file", args={"path": "engine.py"},
+                            result={"ok": True}, session_id=sid2)
+        self.assertIsNone(m.on_pre_verify(session_id=sid2, coding=True, attempt=0,
+                                          changed_paths=["engine.py"]))
+
+    def test_pre_verify_disabled_by_config_returns_none(self):
+        m = self.mod
+        sid = "s-verify-4"
+        m.on_pre_llm_call(session_id=sid, turn_id="t1")
+        m.on_post_tool_call(tool_name="terminal", args={"command": "pytest -q"},
+                            result={"exit_code": 0}, session_id=sid)
+        m.on_transform_llm_output(response_text="Tests pass.", session_id=sid)
+        m.on_pre_llm_call(session_id=sid, turn_id="t2")
+        m.on_post_tool_call(tool_name="write_file", args={"path": "engine.py"},
+                            result={"ok": True}, session_id=sid)
+        m._settings["verify_nudge"] = False
+        try:
+            self.assertIsNone(m.on_pre_verify(session_id=sid, coding=True, attempt=0,
+                                              changed_paths=["engine.py"]))
+        finally:
+            m._settings["verify_nudge"] = True
+
+    def test_pre_verify_never_raises(self):
+        m = self.mod
+        self.assertIsNone(m.on_pre_verify(session_id=None, coding=True, attempt="not-an-int"))
+
+
+class VerifyNudgeDirective(unittest.TestCase):
+    def test_none_when_no_prior_pass_recorded(self):
+        self.assertIsNone(engine.verify_nudge_directive(True, None, ""))
+
+    def test_none_when_not_edited_after_pass(self):
+        self.assertIsNone(engine.verify_nudge_directive(False, 1, "pytest -q"))
+
+    def test_directive_shape_matches_hooks_md(self):
+        """hooks.md's pre_verify continue return is exactly {"action": "continue", "message": str}
+        with a non-empty message; both keys and only those two matter to the dispatcher."""
+        directive = engine.verify_nudge_directive(True, 2, "pytest -q")
+        self.assertEqual(set(directive), {"action", "message"})
+        self.assertEqual(directive["action"], "continue")
+        self.assertIn("turn 2", directive["message"])
+        self.assertIn("pytest -q", directive["message"])
+        self.assertIn("rerun", directive["message"].lower())
+
 
 if __name__ == "__main__":
     unittest.main()

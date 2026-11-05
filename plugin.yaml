@@ -12,6 +12,7 @@ provides_hooks:
   - pre_llm_call
   - post_tool_call
   - transform_llm_output
+  - pre_verify
 config_schema:
   line:
     type: str
@@ -19,3 +20,8 @@ config_schema:
     default: all
     label: Check line
     description: "all = add a line under every reply with claims; issues = only when something is not backed; off = /check only"
+  verify_nudge:
+    type: bool
+    default: true
+    label: Verify nudge
+    description: "On coding turns, ask the agent to rerun tests before finishing when tests last passed before a later edit with no rerun since. Set false to disable."

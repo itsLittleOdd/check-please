@@ -492,6 +492,25 @@ def jobs_report(tally: dict, char_limit: int = 1500) -> str:
     return _truncate_for_phone("\n".join(lines), char_limit)
 
 
+def verify_nudge_directive(edited_after_pass: bool, last_pass_turn: Optional[int],
+                            pass_detail: str) -> Optional[dict]:
+    """pre_verify continue directive (backlog item 9): when the edited-code verify gate fires
+    and the session's last known test pass predates a later edit with no rerun since, ask the
+    agent to rerun tests before finishing. Shape matches hooks.md's pre_verify contract exactly:
+    {"action": "continue", "message": str}. Returns None when there is nothing stale to nudge
+    (no prior pass recorded, or no edit happened after the last pass)."""
+    if not edited_after_pass or last_pass_turn is None:
+        return None
+    detail = f" ({pass_detail})" if pass_detail else ""
+    return {
+        "action": "continue",
+        "message": (
+            f"Tests last passed in turn {last_pass_turn}{detail}. Code changed since then "
+            "with no rerun recorded. Rerun the test suite before telling the user it passes."
+        ),
+    }
+
+
 def detail_report(verdicts: list[Verdict]) -> str:
     if not verdicts:
         return "Check, Please: no completion claims found in the last reply."

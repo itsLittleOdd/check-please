@@ -251,6 +251,25 @@ def on_transform_llm_output(response_text: str = "", session_id: Any = None, **k
         return None
 
 
+def on_pre_verify(session_id: Any = None, coding: bool = False, attempt: int = 0,
+                   changed_paths: Any = None, **kwargs: Any) -> Any:
+    """Backlog item 9: nudge the agent to rerun tests if the verify gate fires on edited code
+    while the session's last known test pass predates a later edit with no rerun since.
+    Scoped to coding sessions, one-shot per turn (idempotent on attempt), off entirely when
+    the 'verify_nudge' config is disabled."""
+    try:
+        if not bool(_settings.get("verify_nudge", True)):
+            return None
+        if attempt or not coding:
+            return None
+        sid = _session(session_id)
+        rec = _cross_record(sid)
+        return engine.verify_nudge_directive(rec["edited_after_pass"], rec["last_pass_turn"], rec["pass_detail"])
+    except Exception:
+        logger.debug("check-please pre_verify failed", exc_info=True)
+        return None
+
+
 def handle_check(raw_args: str = "", session_id: Any = None, **kwargs: Any) -> str:
     try:
         arg = (raw_args or "").strip().split()[0].lower() if (raw_args or "").strip() else ""
@@ -277,9 +296,14 @@ def register(ctx) -> None:
         _settings["line"] = ctx.get_config("line", default="all")
     except Exception:
         pass
+    try:
+        _settings["verify_nudge"] = ctx.get_config("verify_nudge", default=True)
+    except Exception:
+        pass
     ctx.register_hook("pre_llm_call", on_pre_llm_call)
     ctx.register_hook("post_tool_call", on_post_tool_call)
     ctx.register_hook("transform_llm_output", on_transform_llm_output)
+    ctx.register_hook("pre_verify", on_pre_verify)
     ctx.register_command("check", handle_check,
                           description="Show which claims the tool log backs: last reply, "
                                        "'today' for the day's tally, 'jobs' for per-cron-job tally")
