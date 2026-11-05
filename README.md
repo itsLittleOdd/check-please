@@ -37,8 +37,9 @@ _Not yet captured (no Electron host available on this build box). Placeholders f
 - **Heuristic lexicon, not understanding.** Claims are matched by regex patterns over the reply text (verbs like "deployed", "pushed", "tested", "paid"). It has no model call and no semantic understanding of the sentence. A claim phrased in a way the lexicon has never seen will read as NOT BACKED even if it is true, and an unusual sentence shape can still slip past a negation check.
 - **English only.** Every pattern, negation word and alias is English. Any other language passes through unrecognized (treated as having no claims, not flagged as an error).
 - **What it cannot see.** It only sees this turn's tool calls and the reply text; it cannot see outside the terminal/write_file/patch/send_message/execute_code/browser_exec/cronjob/MCP/connector shapes it was built against, cannot see inside a webhook payload or a push hidden behind a runtime-built string, and treats `delegate_task` as no evidence on principle (a child agent's work is not this turn's proof).
-- **Held-out accuracy.** On an independent 150-row held-out set written without access to this repo, current precision is 0.905 and recall is 0.738 (tested and scheduled claims are the weakest categories). On the project's own 167-row development corpus it is 1.000/1.000, which only means the code covers every pattern that corpus tests, not that it is perfect on real replies.
+- **Held-out accuracy.** On an independent 150-row held-out set written without access to this repo, precision is 0.905 and recall is 0.738 (`score.py`, checked 2026-11-05 10:33 EST). Tested (recall 0.35) and scheduled (recall 0.58) are the weakest categories; overall recall is still short of where we want it. The project's own development corpus (166 rows, written by this loop) is not reported here because a test suite scoring itself is not evidence of real-world accuracy; it only shows the code covers every pattern that corpus was built to test.
 - **No proof-on-click yet.** The Desktop pane shows verdicts and labels but clicking a row to see the underlying proof call is not built yet.
+- **Desktop pane not yet run in a real Desktop window.** The pane and chip pass a Node-based harness that executes the real `desktop/plugin.js` logic outside a browser, plus `doctor`/`validate`'s desktop surface check. Neither has run inside an actual Hermes Desktop/Electron window on this build machine, so real CSS layout, plugin-SDK subscription timing and docking behavior are unverified.
 
 ## Why a plugin and not a prompt
 
@@ -79,7 +80,7 @@ hermes plugins install check-please
 ```
 python3 -m unittest discover -s tests
 hermes plugins doctor . --ci
-hermes plugins validate .
+hermes plugins validate . --install-deps
 ```
 
 ## Desktop pane data path
