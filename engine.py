@@ -18,6 +18,23 @@ from typing import Any, Optional
 
 LADDER = ["drafted", "saved", "tested", "committed", "pushed", "deployed", "scheduled", "sent", "paid", "deleted"]
 
+# Ladder families: "proven: X" should only cite evidence from the same claim's own ladder,
+# never an unrelated family's higher rung (Discovered item 18). A deploy proves nothing about
+# whether an invoice was sent; a commit proves nothing about whether a meeting was scheduled.
+_LADDER_FAMILIES = (
+    ("code", ("tested", "committed", "pushed", "deployed")),
+    ("document", ("drafted", "saved", "scheduled", "sent", "paid")),
+)
+
+
+def _family_kinds(kind: str) -> Optional[tuple]:
+    """The family (tuple of kinds) kind belongs to, or None if it is in no family
+    (e.g. "deleted", which _highest_rung already excludes)."""
+    for _name, kinds in _LADDER_FAMILIES:
+        if kind in kinds:
+            return kinds
+    return None
+
 _I = re.IGNORECASE
 
 
@@ -330,10 +347,15 @@ _BACKS = {
 }
 
 
-def _highest_rung(evidence: list[Evidence]) -> Optional[str]:
+def _highest_rung(evidence: list[Evidence], allowed: Optional[tuple] = None) -> Optional[str]:
+    """Highest rung actually proven by evidence this turn. `allowed`, when given, restricts
+    the search to one ladder family so a rung from an unrelated family (e.g. a code deploy)
+    never gets cited as proof for a different family's claim (e.g. an invoice send)."""
     best = None
     for ev in evidence:
         if ev.ok and ev.kind in LADDER and ev.kind != "deleted":
+            if allowed is not None and ev.kind not in allowed:
+                continue
             if best is None or LADDER.index(ev.kind) > LADDER.index(best):
                 best = ev.kind
     return best
@@ -341,8 +363,8 @@ def _highest_rung(evidence: list[Evidence]) -> Optional[str]:
 
 def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
     verdicts: list[Verdict] = []
-    rung = _highest_rung(evidence)
     for claim in extract_claims(reply):
+        rung = _highest_rung(evidence, _family_kinds(claim.kind))
         backers = [e for e in evidence if e.kind in _BACKS.get(claim.kind, set())]
         good = [e for e in backers if e.ok]
         if good:

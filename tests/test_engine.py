@@ -171,6 +171,11 @@ class CheckTurn(unittest.TestCase):
         self.assertIn("1 backed", line)
         self.assertIn("1 stale", line)
         self.assertIn("1 not backed", line)
+        # Item 18 regression: the invoice (document family) is unproven by the unrelated
+        # deploy (code family); the correct cite is the invoice's own "saved" evidence.
+        not_backed = next(v for v in verdicts if v.status == "NOT_BACKED")
+        self.assertIn("proven: saved", not_backed.note)
+        self.assertNotIn("deployed", not_backed.note)
 
     def test_failed_send(self):
         evidence = [ev("send_message", {"to": "x"}, {"error": "bounced"}, seq=1)]
@@ -184,6 +189,45 @@ class CheckTurn(unittest.TestCase):
 
     def test_no_claims_no_line(self):
         self.assertEqual(engine.summary_line(engine.check_turn("Here is the plan.", [])), "")
+
+
+class LadderFamilyScoping(unittest.TestCase):
+    """Discovered item 18: proven_rung must be scoped to the claimed item's own ladder
+    family, never the turn's single globally-highest evidence kind."""
+
+    def test_code_family_does_not_prove_document_claim(self):
+        evidence = [
+            ev("terminal", {"command": "vercel deploy --prod"}, seq=1),   # deployed, code family
+            ev("write_file", {"path": "drafts/invoice-dana.md"}, seq=2),  # drafted, document family
+        ]
+        verdicts = engine.check_turn("Invoice emailed to Dana.", evidence)
+        self.assertEqual(verdicts[0].status, "NOT_BACKED")
+        self.assertEqual(verdicts[0].proven_rung, "drafted")
+
+    def test_document_family_does_not_prove_code_claim(self):
+        evidence = [
+            ev("terminal", {"command": "stripe charges capture"}, seq=1),  # paid, document family
+            ev("terminal", {"command": "git commit -m x"}, seq=2),         # committed, code family
+        ]
+        verdicts = engine.check_turn("Pushed the change.", evidence)
+        self.assertEqual(verdicts[0].status, "NOT_BACKED")
+        self.assertEqual(verdicts[0].proven_rung, "committed")
+
+    def test_no_same_family_evidence_means_no_rung_cited(self):
+        evidence = [ev("terminal", {"command": "vercel deploy --prod"}, seq=1)]  # code only
+        verdicts = engine.check_turn("Invoice emailed to Dana.", evidence)
+        self.assertEqual(verdicts[0].status, "NOT_BACKED")
+        self.assertIsNone(verdicts[0].proven_rung)
+        self.assertNotIn("proven:", verdicts[0].note)
+
+    def test_highest_rung_allowed_filter(self):
+        evidence = [
+            ev("terminal", {"command": "vercel deploy --prod"}, seq=1),
+            ev("write_file", {"path": "drafts/invoice-dana.md"}, seq=2),
+        ]
+        self.assertEqual(engine._highest_rung(evidence), "deployed")
+        self.assertEqual(engine._highest_rung(evidence, engine._family_kinds("sent")), "drafted")
+        self.assertEqual(engine._highest_rung(evidence, engine._family_kinds("tested")), "deployed")
 
 
 class TallyCronJob(unittest.TestCase):

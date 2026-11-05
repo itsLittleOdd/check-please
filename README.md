@@ -7,7 +7,7 @@ Did it?
 Check, Please pairs every "done" claim in a Hermes reply with the tool call that proves it, and adds one line under the reply:
 
 ```
-Check: 1 backed, 1 stale, 1 not backed. First issue: "emailed" (no sent call this turn; proven: deployed). /check for detail.
+Check: 1 backed, 1 stale, 1 not backed. First issue: "emailed" (no sent call this turn; proven: saved). /check for detail.
 ```
 
 Type `/check` for the full breakdown:
@@ -20,7 +20,7 @@ Check, Please: last reply
 - BACKED: "preview is live"
     proof: terminal vercel deploy
 - NOT BACKED: "invoice emailed to Dana"
-    note: no sent call this turn; proven: deployed
+    note: no sent call this turn; proven: saved
 ```
 
 ## Screenshots
