@@ -23,6 +23,23 @@ Check, Please: last reply
     note: no sent call this turn; proven: deployed
 ```
 
+## Screenshots
+
+_Not yet captured (no Electron host available on this build box). Placeholders for the catalog listing:_
+
+- `screenshots/check-line.png`: a Hermes chat reply with the `Check:` line under it (one backed, one stale, one not backed).
+- `screenshots/check-detail.png`: the `/check` command output showing the full breakdown with proof lines.
+- `screenshots/desktop-pane.png`: the Desktop pane docked right, showing claim rows with BACKED/STALE/NOT BACKED labels.
+- `screenshots/status-chip.png`: the status-bar chip for the focused session.
+
+## Limits, stated honestly
+
+- **Heuristic lexicon, not understanding.** Claims are matched by regex patterns over the reply text (verbs like "deployed", "pushed", "tested", "paid"). It has no model call and no semantic understanding of the sentence. A claim phrased in a way the lexicon has never seen will read as NOT BACKED even if it is true, and an unusual sentence shape can still slip past a negation check.
+- **English only.** Every pattern, negation word and alias is English. Any other language passes through unrecognized (treated as having no claims, not flagged as an error).
+- **What it cannot see.** It only sees this turn's tool calls and the reply text; it cannot see outside the terminal/write_file/patch/send_message/execute_code/browser_exec/cronjob/MCP/connector shapes it was built against, cannot see inside a webhook payload or a push hidden behind a runtime-built string, and treats `delegate_task` as no evidence on principle (a child agent's work is not this turn's proof).
+- **Held-out accuracy.** On an independent 150-row held-out set written without access to this repo, current precision is 0.905 and recall is 0.738 (tested and scheduled claims are the weakest categories). On the project's own 167-row development corpus it is 1.000/1.000, which only means the code covers every pattern that corpus tests, not that it is perfect on real replies.
+- **No proof-on-click yet.** The Desktop pane shows verdicts and labels but clicking a row to see the underlying proof call is not built yet.
+
 ## Why a plugin and not a prompt
 
 A prompt asks the model that made the claim to grade its own homework. Check, Please reads the tool log through Hermes hooks, outside the model, and the match is plain code. No second model, no extra tokens, no network.
