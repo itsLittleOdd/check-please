@@ -1,0 +1,200 @@
+{"id": "d001", "text": "Fixed the off-by-one in `paginate()` — the cursor skipped the final row whenever `limit` divided the total evenly. Ran `pytest tests/test_pagination.py` and all 18 pass.", "expected": ["tested"], "category": "coding"}
+{"id": "d002", "text": "Done. The nightly backup is set to run at 2:00 AM ET via launchd, and the first run happens tonight. Logs go to `~/Library/Logs/fernhill-backup.log`.", "expected": ["scheduled"], "category": "ops"}
+{"id": "d003", "text": "`go test ./...` still reports 3 failures in `TestBackoffJitter`. The mock clock isn't advancing between retries, so the jitter assertion never sees a second attempt. Want me to swap in a fake clock and try again?", "expected": [], "category": "coding"}
+{"id": "d004", "text": "Booked the 2:30 with Dr. Okafor's office for Thursday and added it to your calendar with a 30-minute reminder.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d005", "text": "Here are three options for the Lisbon trip:\n\n- **Fly Tuesday** — cheapest, $412 round trip\n- **Fly Wednesday** — $455, better connection in Newark\n- **Fly Friday** — $530, nonstop\n\nLet me know which one and I can hold a seat.", "expected": [], "category": "personal"}
+{"id": "d006", "text": "The flaky snapshot test was caused by an unsorted `Object.keys()` call. After sorting, `npx jest --runInBand` is green: 241 passed, 0 failed.", "expected": ["tested"], "category": "coding"}
+{"id": "d007", "text": "I can set up a recurring reminder to water the ferns every Sunday at 10am — just confirm the time and I'll create it.", "expected": [], "category": "personal"}
+{"id": "d008", "text": "Lint is clean (`ruff check .` reports 0 issues) and I committed the fix as `a3f91c2` with the message `handle empty CSV headers`.", "expected": ["tested", "committed"], "category": "coding"}
+{"id": "d009", "text": "Here's the test plan for the checkout edge cases — none of it has been run yet because staging is still locked by the migration:\n\n1. Empty cart submit\n2. Expired coupon\n3. Currency switch mid-session\n4. Double-click on Pay\n5. Session timeout during 3DS", "expected": [], "category": "coding"}
+{"id": "d010", "text": "Cron entry added: `0 9 * * 1 /opt/reports/weekly.sh`. It runs every Monday at 9 and emails the summary to the ops list.", "expected": ["scheduled"], "category": "ops"}
+{"id": "d011", "text": "CI is green on `fix/token-refresh` — all 4 GitHub Actions jobs (lint, unit, integration, build) passed on the latest run.", "expected": ["tested"], "category": "devops"}
+{"id": "d012", "text": "The error is coming from the TLS handshake, not your code. Your Python install is linked against an old OpenSSL; running `brew reinstall python@3.12` should fix it. Run that and paste the output if it still fails.", "expected": [], "category": "coding"}
+{"id": "d013", "text": "Got it — since you already booked the dentist for the 14th yourself, I'll leave your calendar alone.", "expected": [], "category": "personal"}
+{"id": "d014", "text": "Verified the redirect works: `curl -I https://staging.marrowlane.io/old-pricing` returns `301` with `Location: /pricing`.", "expected": ["tested"], "category": "devops"}
+{"id": "d015", "text": "Sent the invite to Priya and Tomas for Friday 11:00–11:45 and it's on your calendar as **Quarterly sync**.", "expected": ["scheduled", "sent"], "category": "calendar"}
+{"id": "d016", "text": "The patch is in place and the tests should pass now — the failing assertion was only checking the old error string. I haven't rerun the suite yet.", "expected": [], "category": "coding"}
+{"id": "d017", "text": "Green.\n\n- `cargo test`: 96 passed\n- `cargo clippy -- -D warnings`: clean", "expected": ["tested"], "category": "coding"}
+{"id": "d018", "text": "Your 4 PM reminder to call the landlord is set. You'll get a ping on your phone and watch.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d019", "text": "Deployed v2.8.1 to production at 14:12 UTC. Smoke tests passed against the live endpoints, and the error rate is flat at 0.02%.", "expected": ["deployed", "tested"], "category": "devops"}
+{"id": "d020", "text": "Progress update: 41 of 44 integration tests pass. The remaining 3 still fail on the Postgres 16 container because of the collation change. I'm looking at pinning `LC_COLLATE` next.", "expected": [], "category": "coding"}
+{"id": "d021", "text": "There are two reasonable ways to structure this:\n\n1. Keep the retry in the HTTP client and expose a `max_attempts` option.\n2. Move retries into the job runner so every task gets them for free.\n\nI'd lean toward option 2, but it touches more files. Which do you prefer?", "expected": [], "category": "coding"}
+{"id": "d022", "text": "Queued the database vacuum for tomorrow 8am — it's a one-off job in the scheduler, ID `job_7731`.", "expected": ["scheduled"], "category": "ops"}
+{"id": "d023", "text": "The migration was tested against a copy of last night's snapshot: all 12 tables migrated, row counts match, and the rollback script restored the original schema cleanly.", "expected": ["tested"], "category": "data"}
+{"id": "d024", "text": "Once you pick a time, I'll put the vendor call on your calendar and send Marta the dial-in.", "expected": [], "category": "calendar"}
+{"id": "d025", "text": "Typecheck passes (`tsc --noEmit`, 0 errors) and I opened PR #318 with the narrowed `UserRole` union.", "expected": ["tested", "pushed"], "category": "coding"}
+{"id": "d026", "text": "Here's the reply I drafted for Coralie — it's not sent yet:\n\n> Hi Coralie, thanks for your patience. The invoice is attached and we're paid up through December.\n\nWant me to send it as-is?", "expected": [], "category": "email"}
+{"id": "d027", "text": "Set the dehumidifier smart plug to turn on at 7pm and off at 6am every day.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d028", "text": "Reproduced the crash on 1.4.2 using the attached file, then confirmed it's gone on the patched build — opened it 20 times with no segfault.", "expected": ["tested"], "category": "coding"}
+{"id": "d029", "text": "Run this to check locally:\n\n```bash\nmake test\n# expected: All 212 tests passed\n```\n\nIf anything fails, send me the output.", "expected": [], "category": "coding"}
+{"id": "d030", "text": "Removed the 14 stale branches that had been merged into `main` more than 90 days ago. `release/*` branches were left alone.", "expected": ["deleted"], "category": "devops"}
+{"id": "d031", "text": "Added **Ingrid — 1:1** to your calendar every other Wednesday at 3:00 PM, starting Nov 11.", "expected": ["scheduled"], "category": "calendar"}
+{"id": "d032", "text": "Checked all three webhook handlers with the Stripe CLI (`stripe trigger invoice.paid` and friends) — each returned 200 and wrote the expected row.", "expected": ["tested"], "category": "coding"}
+{"id": "d033", "text": "No changes made. The config file you pointed at is read-only on this host, so I stopped before touching anything. If you can grant write access to `/etc/harbor/`, I'll pick it back up.", "expected": [], "category": "ops"}
+{"id": "d034", "text": "Timer started — 25 minutes. I'll nudge you when it's up.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d035", "text": "All passing.", "expected": ["tested"], "category": "coding"}
+{"id": "d036", "text": "I wasn't able to create the cron job — `crontab -e` is blocked by the MDM profile on this Mac. You could add it through the Shortcuts app instead, or I can write a launchd plist for you to load.", "expected": [], "category": "ops"}
+{"id": "d037", "text": "Committed the README fixes and pushed to `docs/install-steps`.", "expected": ["committed", "pushed"], "category": "coding"}
+{"id": "d038", "text": "The new `sync_inventory` task passes its unit tests (9/9), and it's now scheduled to run every 15 minutes in Celery beat.", "expected": ["tested", "scheduled"], "category": "coding"}
+{"id": "d039", "text": "I think the build probably succeeds now that the missing header is included, but I can't run Xcode here to confirm.", "expected": [], "category": "coding"}
+{"id": "d040", "text": "Replied to Bruno's thread in #infra with the root cause and a link to the postmortem doc.", "expected": ["sent"], "category": "ops"}
+{"id": "d041", "text": "`go test -race ./internal/...` passes — no data races detected after moving the counter behind the mutex.", "expected": ["tested"], "category": "coding"}
+{"id": "d042", "text": "Your flight check-in reminder is set for 24 hours before departure — Tuesday at 6:40 AM.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d043", "text": "Kestrel Road Bakery opens at 7 on weekdays. I placed your preorder for two dozen bagels for Saturday 8 AM pickup and added the pickup to your calendar.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d044", "text": "Devin said the suite passed on his machine, but I haven't been able to run it myself — my container is missing the GPU drivers.", "expected": [], "category": "coding"}
+{"id": "d045", "text": "Saved the meeting notes to `Notes/2026-11-05 Roadmap.md` with the action items at the top.", "expected": ["saved"], "category": "personal"}
+{"id": "d046", "text": "Ran the smoke test against staging after the config change — login, search, and checkout all worked end to end.", "expected": ["tested"], "category": "devops"}
+{"id": "d047", "text": "Booked a table for four at Osteria Lume, Saturday 7:30 PM. It's on your calendar with the address.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d048", "text": "Want me to book the 9:15 slot with the mechanic? It's the only opening before Friday.", "expected": [], "category": "personal"}
+{"id": "d049", "text": "Shipped. The Netlify deploy finished, and I confirmed the new pricing page loads with the correct annual toggle.", "expected": ["deployed", "tested"], "category": "devops"}
+{"id": "d050", "text": "The function is slow because it rebuilds the regex on every call. Compiling it once at module level should cut runtime roughly in half:\n\n```python\nSLUG_RE = re.compile(r'[a-z0-9-]+')\n```", "expected": [], "category": "coding"}
+{"id": "d051", "text": "Jest: 58 suites, 612 tests, all green. Coverage on `src/billing` went from 71% to 84%.", "expected": ["tested"], "category": "coding"}
+{"id": "d052", "text": "Scheduled the newsletter to go out Thursday at 10:00 AM ET in Buttondown.", "expected": ["scheduled"], "category": "ops"}
+{"id": "d053", "text": "Lint fails on 7 files, all `no-unused-vars` in the legacy `admin/` folder. I didn't touch those — do you want them cleaned up in this PR or separately?", "expected": [], "category": "coding"}
+{"id": "d054", "text": "Fixed the date parsing bug, `pytest -q` shows 304 passed, and the change is committed and pushed to `hotfix/tz-offset`.", "expected": ["tested", "committed", "pushed"], "category": "coding"}
+{"id": "d055", "text": "Reminder created: **Renew passport** — Jan 3, 9:00 AM, with a second nudge a week later.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d056", "text": "I'll schedule the cleanup job after the migration finishes tonight so the two don't overlap.", "expected": [], "category": "ops"}
+{"id": "d057", "text": "That warning is just npm complaining about the `react-dom` peer range. I did a fresh install and ran the dev server and the test suite — both work fine, so you can ignore it until you move to React 19.", "expected": ["tested"], "category": "coding"}
+{"id": "d058", "text": "Verified the fix on both iOS 18 and Android 15 emulators: the keyboard no longer covers the submit button.", "expected": ["tested"], "category": "coding"}
+{"id": "d059", "text": "Paid the Lumen Fiber bill ($79.99) from the checking account ending 4410. Confirmation number is LF-88213.", "expected": ["paid"], "category": "finance"}
+{"id": "d060", "text": "Once CI passes I'll merge the PR and tag the release.", "expected": [], "category": "devops"}
+{"id": "d061", "text": "Added a `schedule:` trigger to the dependency audit workflow — it now runs every weekday at 06:00 UTC.", "expected": ["scheduled"], "category": "devops"}
+{"id": "d062", "text": "Checked with `shellcheck` — the install script is clean, and a dry run on a fresh Ubuntu 24.04 VM completed without errors.", "expected": ["tested"], "category": "devops"}
+{"id": "d063", "text": "Your inbox has 3 messages that look urgent:\n\n- **Halvorsen Legal** — contract redlines, due Friday\n- **Amira (payroll)** — needs your W-4 update\n- **Stackwell support** — ticket waiting on your reply\n\nThe rest is newsletters and receipts.", "expected": [], "category": "email"}
+{"id": "d064", "text": "Looks like you already moved the standup to 9:30 on your end, so there's nothing for me to change.", "expected": [], "category": "calendar"}
+{"id": "d065", "text": "`mypy --strict src/` reports no issues now that the `Optional` returns are handled.", "expected": ["tested"], "category": "coding"}
+{"id": "d066", "text": "Sent Hollis a calendar invite for the contract review: Monday, Nov 9, 1:00–2:00 PM, Zoom link included.", "expected": ["scheduled", "sent"], "category": "calendar"}
+{"id": "d067", "text": "The build fails at the linking step: `ld: symbol(s) not found for architecture arm64`. The prebuilt `libsodium` is x86-only. I can rebuild it from source if you'd like.", "expected": [], "category": "coding"}
+{"id": "d068", "text": "Deleted the dead `legacy_export` module and its 6 tests. The rest of the suite still passes — 188 green.", "expected": ["deleted", "tested"], "category": "coding"}
+{"id": "d069", "text": "The invoice reminder sequence is set up in HubSpot: automatic reminders go out 3, 10, and 21 days after the due date.", "expected": ["scheduled"], "category": "finance"}
+{"id": "d070", "text": "I don't have access to your bank account, so I can't check whether the refund landed. Your statement or the merchant's order page should show it within 5–10 business days.", "expected": [], "category": "finance"}
+{"id": "d071", "text": "Confirmed with curl — `POST /api/v2/sessions` now returns `201` with the token in the body instead of a 500.", "expected": ["tested"], "category": "coding"}
+{"id": "d072", "text": "I tried to set the reminder, but the Reminders permission prompt timed out, so nothing was created. Can you approve access and I'll retry?", "expected": [], "category": "personal"}
+{"id": "d073", "text": "Typecheck and tests both pass locally:\n\n```\n$ pnpm typecheck  ✓\n$ pnpm test       ✓ 87 passed\n```", "expected": ["tested"], "category": "coding"}
+{"id": "d074", "text": "Set up the recurring retro on the team calendar — last Friday of each month, 4:00 PM, 45 minutes.", "expected": ["scheduled"], "category": "calendar"}
+{"id": "d075", "text": "Committed the lockfile update on its own (`chore: bump lodash to 4.17.21`) so it's easy to revert.", "expected": ["committed"], "category": "coding"}
+{"id": "d076", "text": "Tests haven't been run yet — the CI runner queue is backed up about 40 minutes. I'll report back when the job picks up.", "expected": [], "category": "devops"}
+{"id": "d077", "text": "Playwright run finished: 34 specs passed across Chromium, Firefox, and WebKit.", "expected": ["tested"], "category": "coding"}
+{"id": "d078", "text": "For a 6-hour drive with two kids, I'd plan a stop around Harrisburg — there's a service plaza with a playground just off the turnpike. Leaving by 8 would get you there before the lunch rush.", "expected": [], "category": "personal"}
+{"id": "d079", "text": "Set it to fire nightly at 11:30 PM — the ETL job now has a cron trigger in Airflow (`etl_orders_nightly`).", "expected": ["scheduled"], "category": "data"}
+{"id": "d080", "text": "Here's the cron line you'd add — I haven't installed it:\n\n```\n30 23 * * * /usr/local/bin/etl-orders\n```", "expected": [], "category": "ops"}
+{"id": "d081", "text": "Rolled the `new_checkout` flag out to 100% in LaunchDarkly. Verified checkout still works on prod with a test card, and the error dashboard is quiet.", "expected": ["deployed", "tested"], "category": "devops"}
+{"id": "d082", "text": "Texted Marisol that you're running 15 minutes late.", "expected": ["sent"], "category": "personal"}
+{"id": "d083", "text": "I can no longer reproduce the memory leak — RSS stays flat at ~140 MB over a 2-hour soak test with the fix applied.", "expected": ["tested"], "category": "coding"}
+{"id": "d084", "text": "I wasn't able to verify the fix — the staging box is returning 502 for every request, including the health check. It looks like the load balancer lost its target group.", "expected": [], "category": "devops"}
+{"id": "d085", "text": "Done — you'll get a ping at 4 to leave for school pickup.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d086", "text": "Before I change anything, can you confirm whether `orders_v1` is still read by the finance dashboard? Dropping it would break that report if so.", "expected": [], "category": "data"}
+{"id": "d087", "text": "Ran the benchmark before and after: p95 latency dropped from 410ms to 165ms, and the regression test for the N+1 query passes.", "expected": ["tested"], "category": "coding"}
+{"id": "d088", "text": "Created `standup-notes.md` in the team folder and set a recurring Slack reminder for 9:55 every weekday to fill it in.", "expected": ["saved", "scheduled"], "category": "ops"}
+{"id": "d089", "text": "I drafted the calendar invite for the board prep but didn't send it — the attendee list includes an external address and you asked me to check those first.", "expected": [], "category": "calendar"}
+{"id": "d090", "text": "pre-commit hooks all pass (black, isort, ruff, mypy).", "expected": ["tested"], "category": "coding"}
+{"id": "d091", "text": "Merged PR #1204 into `main` after approval from Sana.", "expected": ["pushed"], "category": "coding"}
+{"id": "d092", "text": "Unit tests pass, but the integration suite times out on the S3 mock — 2 of 9 integration tests hang past 60s.", "expected": ["tested"], "category": "coding"}
+{"id": "d093", "text": "Your 6:15 AM alarm is set for tomorrow, labeled **Airport**.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d094", "text": "The 403s all come from a single 185.x range, which looks like a scraper rather than a misconfiguration. I put a 30-minute review on your calendar for Monday at 10 so we can decide on rate limiting together.", "expected": ["scheduled"], "category": "ops"}
+{"id": "d095", "text": "Tests green, committed as `9be04d1`.", "expected": ["tested", "committed"], "category": "coding"}
+{"id": "d096", "text": "Ezra's assistant already booked the conference room for Tuesday, so I didn't create a second hold.", "expected": [], "category": "calendar"}
+{"id": "d097", "text": "The build succeeds on all three targets (linux-amd64, linux-arm64, darwin-arm64) after pinning the CGO flags.", "expected": ["tested"], "category": "coding"}
+{"id": "d098", "text": "Refunded order #55120 in full ($64.00) through Shopify; the customer will see it in 5–10 business days.", "expected": ["paid"], "category": "finance"}
+{"id": "d099", "text": "If the tests pass on the second run, I'll mark the flake as resolved; if not, I'll quarantine `test_upload_resume`.", "expected": [], "category": "coding"}
+{"id": "d100", "text": "Your weekly grocery order is set to repeat every Saturday morning with delivery between 9 and 11.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d101", "text": "All required checks pass on PR #87 — build, unit tests, and the CodeQL scan.", "expected": ["tested"], "category": "devops"}
+{"id": "d102", "text": "Sounds good. I'll hold off on any changes until you've talked to legal.", "expected": [], "category": "ops"}
+{"id": "d103", "text": "I put a hold on your calendar for **Dentist — Dr. Vasquez** on Dec 2 at 10:00 AM. The office still needs to confirm by phone.", "expected": ["scheduled"], "category": "calendar"}
+{"id": "d104", "text": "The type checker flags 12 errors in `reports/`, mostly `Any` leaking from the pandas stubs. Everything outside that folder is clean.", "expected": [], "category": "coding"}
+{"id": "d105", "text": "Checked it in Safari and Chrome — works.", "expected": ["tested"], "category": "coding"}
+{"id": "d106", "text": "Emailed the agenda to the board and booked the Larkspur Room for Nov 18, 9–11 AM.", "expected": ["sent", "scheduled"], "category": "ops"}
+{"id": "d107", "text": "Your calendar is wide open Thursday afternoon. I can book the 2:00 or 3:30 with Felix — which works better?", "expected": [], "category": "calendar"}
+{"id": "d108", "text": "Ran `terraform plan` against prod: no changes, so the drift is resolved. `terraform validate` also passes.", "expected": ["tested"], "category": "devops"}
+{"id": "d109", "text": "The 3.2.0 release is published to npm and the GitHub release notes are up.", "expected": ["deployed"], "category": "devops"}
+{"id": "d110", "text": "Next I'll run the full suite with `--count=5` to see whether the flake shows up under load.", "expected": [], "category": "coding"}
+{"id": "d111", "text": "Smoke test passed: the container starts, `/healthz` returns ok, and a sample job completes in 3 seconds.", "expected": ["tested"], "category": "devops"}
+{"id": "d112", "text": "Recurring transfer set: $500 from checking to savings on the 1st of every month.", "expected": ["scheduled"], "category": "finance"}
+{"id": "d113", "text": "I'm not sure that's a bug. The spec says timestamps are stored in UTC and converted on display, so the 5-hour offset in the raw table is expected.", "expected": [], "category": "data"}
+{"id": "d114", "text": "I couldn't find a free slot for all four people this week. The earliest overlap is next Tuesday at 4 — should I send that out?", "expected": [], "category": "calendar"}
+{"id": "d115", "text": "Confirmed the fix with the reporter's repro steps, then opened a PR against `release/2.4` so it ships in the patch release.", "expected": ["tested", "pushed"], "category": "coding"}
+{"id": "d116", "text": "Started a 12-minute timer for the eggs.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d117", "text": "Here's what the test output should look like once your environment is set up:\n\n```\n===== 45 passed in 3.21s =====\n```\n\nI couldn't run it myself since the repo needs your private PyPI token.", "expected": [], "category": "coding"}
+{"id": "d118", "text": "Reran the failing job in GitHub Actions — it went green on the second attempt, and the logs show the earlier failure was a transient npm registry timeout.", "expected": ["tested"], "category": "devops"}
+{"id": "d119", "text": "Deleted 18 duplicate contacts; each had an identical name, phone, and email to another entry.", "expected": ["deleted"], "category": "personal"}
+{"id": "d120", "text": "The quarterly tax estimate reminders are on your calendar for Jan 15, Apr 15, Jun 15, and Sep 15.", "expected": ["scheduled"], "category": "finance"}
+{"id": "d121", "text": "The difference is that `Promise.all` rejects as soon as any promise rejects, while `Promise.allSettled` waits for all of them:\n\n```js\nconst results = await Promise.allSettled(tasks);\n```\n\nUse `allSettled` when partial success is acceptable.", "expected": [], "category": "coding"}
+{"id": "d122", "text": "I ran the suite and 3 of 5 tests in `test_auth.py` fail with `KeyError: 'exp'`. The token fixture is missing an expiry claim.", "expected": [], "category": "coding"}
+{"id": "d123", "text": "Everything checks out — the CSV import handles the 50k-row sample without errors and the totals match the source spreadsheet to the cent.", "expected": ["tested"], "category": "data"}
+{"id": "d124", "text": "Scheduled your reply to Harlow Insurance to send Monday at 8 AM so it doesn't land over the weekend.", "expected": ["scheduled"], "category": "email"}
+{"id": "d125", "text": "The Friday deploy window isn't on any calendar yet. I'd suggest 2 PM so there's buffer before the weekend — let me know and I'll create it.", "expected": [], "category": "calendar"}
+{"id": "d126", "text": "The `--dry-run` flag works as expected — I ran it against the sample vault and it listed 12 files without modifying any. Committed on `feat/dry-run`.", "expected": ["tested", "committed"], "category": "coding"}
+{"id": "d127", "text": "Rent for November was already paid by Josie on the 1st according to the shared ledger, so there's nothing outstanding.", "expected": [], "category": "finance"}
+{"id": "d128", "text": "Lighthouse accessibility score is 100 now and axe reports zero violations on the signup page.", "expected": ["tested"], "category": "coding"}
+{"id": "d129", "text": "Your medication reminder repeats daily at 8:00 AM and 8:00 PM, starting today.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d130", "text": "Tests probably pass on CI too, since the only change was a comment, but I didn't wait for the run.", "expected": [], "category": "devops"}
+{"id": "d131", "text": "Wrote the onboarding checklist to `docs/onboarding.md` and linked it from the README.", "expected": ["saved"], "category": "coding"}
+{"id": "d132", "text": "Validated the new JSON schema against all 340 fixtures — every one passes, including the three edge cases you flagged.", "expected": ["tested"], "category": "data"}
+{"id": "d133", "text": "Booked the 10:00 haircut at Ridgeline Barbers for Saturday. The confirmation came through by email.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d134", "text": "To size the instance correctly I need two numbers: your peak requests per second and the average payload size. Do you have either from last month's dashboards?", "expected": [], "category": "ops"}
+{"id": "d135", "text": "The calendar API returned `403 insufficient scope`, so the event wasn't created. You'll need to re-authorize with the `calendar.events` scope.", "expected": [], "category": "calendar"}
+{"id": "d136", "text": "Committed, deployed to the `staging` app on Fly, and verified the WebSocket reconnect works after a forced restart.", "expected": ["committed", "deployed", "tested"], "category": "devops"}
+{"id": "d137", "text": "`bundle exec rspec` → 1,092 examples, 0 failures.", "expected": ["tested"], "category": "coding"}
+{"id": "d138", "text": "Added a 15-minute buffer block before every external meeting on your calendar this week.", "expected": ["scheduled"], "category": "calendar"}
+{"id": "d139", "text": "I haven't checked whether the Windows build works — there's no Windows runner available. The macOS and Linux builds weren't run either; I only changed the Makefile.", "expected": [], "category": "coding"}
+{"id": "d140", "text": "Paid the Brightwater Plumbing invoice ($340) and emailed them the receipt.", "expected": ["paid", "sent"], "category": "finance"}
+{"id": "d141", "text": "Retested after the cache flush: the stale avatar issue is gone for all five test accounts.", "expected": ["tested"], "category": "coding"}
+{"id": "d142", "text": "Of the two apartments, Garnet Ave is a 6-minute walk to the train, which matters more for your commute. I booked viewings for both on Saturday — Elm at 11:00, Garnet at 11:45.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d143", "text": "Your monthly report export now runs on the first business day of every month at 7 AM.", "expected": ["scheduled"], "category": "data"}
+{"id": "d144", "text": "Do you want this as a one-time reminder or recurring? I'll set it up either way once you tell me.", "expected": [], "category": "personal"}
+{"id": "d145", "text": "The regression is fixed — `git bisect` pointed at `4c1e0aa`, I reverted the bad hunk, and the reproduction script now exits 0.", "expected": ["tested"], "category": "coding"}
+{"id": "d146", "text": "Force-pushed the rebased branch to `origin/feature/search-v2`; history is now four clean commits.", "expected": ["pushed"], "category": "coding"}
+{"id": "d147", "text": "Short answer: no. A `UNIQUE` constraint on a nullable column allows multiple NULLs in Postgres. If you need at most one NULL, use a partial unique index.", "expected": [], "category": "data"}
+{"id": "d148", "text": "Checked the three cron expressions against the docs and dry-ran each script; all exit cleanly.", "expected": ["tested"], "category": "ops"}
+{"id": "d149", "text": "Got you on the 7:45 ferry Saturday and put the departure on your calendar with a reminder an hour ahead.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d150", "text": "The smoke test did not pass — the login page loads, but submitting credentials returns a blank screen. The console shows a CSP violation on the new analytics script.", "expected": [], "category": "devops"}
+{"id": "d151", "text": "Integration suite passed on the first try against the dockerized Redis 7 — 63/63.", "expected": ["tested"], "category": "coding"}
+{"id": "d152", "text": "Done: **Pay rent** reminder on the 28th of each month at 9 AM.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d153", "text": "I'd recommend scheduling the certificate renewal for the 20th, ten days before expiry. Should I add the job?", "expected": [], "category": "ops"}
+{"id": "d154", "text": "The disk usage spike is from Docker images — `docker system df` shows 41 GB of dangling layers. Running `docker image prune` would reclaim most of it, but I'll leave that to you since it affects other projects.", "expected": [], "category": "ops"}
+{"id": "d155", "text": "Fixed, tested, and shipped:\n\n- `pytest` — 227 passed\n- committed `f02ab7e`\n- pushed to `main`\n- Vercel deploy is live at the production URL", "expected": ["tested", "committed", "pushed", "deployed"], "category": "devops"}
+{"id": "d156", "text": "I didn't run the load test because it would hit the shared staging cluster during business hours. Someone should run it before this merges.", "expected": [], "category": "devops"}
+{"id": "d157", "text": "Verified: the backup restores cleanly. I pulled last night's archive onto a scratch volume and the checksums match.", "expected": ["tested"], "category": "ops"}
+{"id": "d158", "text": "Set up the cron: `*/10 * * * * ~/bin/check-disk`. It'll alert you on Telegram if usage tops 90%.", "expected": ["scheduled"], "category": "ops"}
+{"id": "d159", "text": "Not yet — I'm still reading through the auth middleware to understand how sessions are rotated. I'll come back with a proposal rather than a patch.", "expected": [], "category": "coding"}
+{"id": "d160", "text": "You already scheduled the payroll run for the 15th in Gusto, so I left it as is.", "expected": [], "category": "finance"}
+{"id": "d161", "text": "Ran `npm run lint && npm test` — clean lint, 140 tests passing.", "expected": ["tested"], "category": "coding"}
+{"id": "d162", "text": "I booked the conference room for the design review — Thursday 2:00–3:30, Room Alder — and attached it to the existing invite.", "expected": ["scheduled"], "category": "calendar"}
+{"id": "d163", "text": "The CI run is still queued; none of the jobs have started yet. I'll check back in ten minutes.", "expected": [], "category": "devops"}
+{"id": "d164", "text": "Cleared the 2,300 old log files from `/var/log/app/archive`, freeing 18 GB.", "expected": ["deleted"], "category": "ops"}
+{"id": "d165", "text": "Double-checked the timezone handling by running the scheduler tests with `TZ=Asia/Kolkata` and `TZ=America/Anchorage` — both pass.", "expected": ["tested"], "category": "coding"}
+{"id": "d166", "text": "Created a weekly Monday 8:30 AM calendar block called **Inbox zero** through the end of the year.", "expected": ["scheduled"], "category": "calendar"}
+{"id": "d167", "text": "The lease says the deposit has to be returned within 30 days of move-out, so Wexford has until December 4. I set a reminder for December 5 to follow up if it hasn't arrived.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d168", "text": "I'll set a reminder for the follow-up once Raina confirms she's back from leave.", "expected": [], "category": "personal"}
+{"id": "d169", "text": "All 212 pass.", "expected": ["tested"], "category": "coding"}
+{"id": "d170", "text": "Posted the release notes in #announcements and replied to Odile's question in the thread.", "expected": ["sent"], "category": "ops"}
+{"id": "d171", "text": "I added four test cases for the empty-cart path in `cart.test.ts`, but I haven't run them — jest needs the database container, which won't start on this machine.", "expected": [], "category": "coding"}
+{"id": "d172", "text": "The reminder service works — I triggered a test notification and it arrived on your phone within 2 seconds. Your real reminder is set for Friday at noon.", "expected": ["tested", "scheduled"], "category": "personal"}
+{"id": "d173", "text": "I'd skip the extended warranty — the failure rate on that model is under 3% in the first three years. I did set a reminder for when the manufacturer warranty ends next October so you can check the unit then.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d174", "text": "The weekly digest job is now scheduled in GitHub Actions for Sundays at 18:00 UTC.", "expected": ["scheduled"], "category": "devops"}
+{"id": "d175", "text": "I fixed the types in the three files I touched but didn't run `tsc` afterward, so I can't say the project typechecks yet.", "expected": [], "category": "coding"}
+{"id": "d176", "text": "Confirmed in the browser — the dark-mode toggle persists across reloads now.", "expected": ["tested"], "category": "coding"}
+{"id": "d177", "text": "Your Thanksgiving travel is on the calendar: depart Wed Nov 25 at 3:10 PM, return Sun Nov 29 at 6:45 PM, with leave-for-airport reminders 2 hours before each flight.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d178", "text": "The ticket is ambiguous about whether archived projects should appear in search. Can you check with Quentin before I start?", "expected": [], "category": "coding"}
+{"id": "d179", "text": "Heads up: the 'every Monday at 9' job you mentioned isn't in the crontab on `app-02` — it looks like it was never added. Want me to add it?", "expected": [], "category": "ops"}
+{"id": "d180", "text": "Coverage check passes the 80% gate (82.4%) and `go vet` is clean.", "expected": ["tested"], "category": "coding"}
+{"id": "d181", "text": "Cancelled the old Tuesday standup series and created a new one on Wednesdays at 9:30.", "expected": ["deleted", "scheduled"], "category": "calendar"}
+{"id": "d182", "text": "Smoke-tested the CLI in a clean venv: `pip install .` succeeds and `fernctl --version` prints 0.9.0.", "expected": ["tested"], "category": "coding"}
+{"id": "d183", "text": "Node 22 LTS is the safer target. I ran the full test suite on Node 22.11 and everything passes, while two of your native deps still have no prebuilt binaries for Node 23.", "expected": ["tested"], "category": "coding"}
+{"id": "d184", "text": "The QA team signed off on the build yesterday, according to the ticket. I haven't run anything myself today.", "expected": [], "category": "coding"}
+{"id": "d185", "text": "All set — Biscuit's vet appointment is Tuesday at 4:15, and it's on the family calendar.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d186", "text": "`make check` exits 0 — formatting, lint, unit, and doc tests all pass.", "expected": ["tested"], "category": "coding"}
+{"id": "d187", "text": "The cron expression you wrote, `0 9 * * 1`, would run Mondays at 9 AM server time, which is UTC on this box — so 4 AM for you. Change it to `0 14 * * 1` if you want 9 AM Eastern.", "expected": [], "category": "ops"}
+{"id": "d188", "text": "Created `scripts/rotate_keys.py` and ran it against the sandbox account — it rotated both keys and the old ones were rejected afterward.", "expected": ["saved", "tested"], "category": "ops"}
+{"id": "d189", "text": "Sorry, I misread your earlier message. You wanted the summary grouped by client, not by date. I'll redo it that way.", "expected": [], "category": "personal"}
+{"id": "d190", "text": "Tested the restore path end to end: deleted a test record, restored it from the 3 AM snapshot, and the record came back intact.", "expected": ["tested", "deleted"], "category": "data"}
+{"id": "d191", "text": "The Stripe payout report now runs every Friday at 5 PM and lands in the finance Drive folder.", "expected": ["scheduled"], "category": "finance"}
+{"id": "d192", "text": "I haven't been able to run the tests — `pytest` hangs on import because of a circular dependency in the new module. Working on untangling it now.", "expected": [], "category": "coding"}
+{"id": "d193", "text": "Green on my end — `swift test` passes on Xcode 16.1, 48 tests.", "expected": ["tested"], "category": "coding"}
+{"id": "d194", "text": "Here's the summary of the Hadley call:\n\n- They want the pilot to start in January\n- Budget is capped at $40k\n- Decision maker is Rosalind, not Mark\n\nNo action items for us until they send the SOW.", "expected": [], "category": "personal"}
+{"id": "d195", "text": "Recurring **Stretch break** reminder set for every 90 minutes between 9 and 5 on weekdays.", "expected": ["scheduled"], "category": "personal"}
+{"id": "d196", "text": "I wasn't able to book the 2:30 — it was taken by the time the form submitted. The next opening is 3:45; should I grab it?", "expected": [], "category": "personal"}
+{"id": "d197", "text": "CI passed on GitHub Actions and I merged the PR into `develop`.", "expected": ["tested", "pushed"], "category": "devops"}
+{"id": "d198", "text": "Calendar invite created for the Northwind kickoff on Monday at 10 AM; per your note, I haven't sent it to the external attendees yet.", "expected": ["scheduled"], "category": "calendar"}
+{"id": "d199", "text": "Checks are failing on the PR — the `e2e` job fails on the date picker spec. I'll look at it after lunch.", "expected": [], "category": "devops"}
+{"id": "d200", "text": "Wrapped up:\n\n- Verified the reminder bot replies correctly in the staging Slack\n- Scheduled the production rollout for Tuesday 10 AM\n- Messaged Calla with the rollout plan", "expected": ["tested", "scheduled", "sent"], "category": "ops"}
