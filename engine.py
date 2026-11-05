@@ -199,7 +199,9 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
              r"notified|delivered (it|the|to)|it'?s been sent|has been sent|have been sent|went out|is out the door)"),
     ("deployed", r"\b(deployed|is (now )?live|went live|now live|shipped to prod(uction)?|"
                  r"published(?!\s+(the\s+)?release\s+notes?\b)|released|rolled out)\b"),
-    ("pushed", r"\b(pushed(?!\s+(back|off|through|aside|for\b|myself|hard|notifications?\b|a notification\b|the button\b))|merged|opened (a|the) (pr|pull request))\b"),
+    ("pushed", r"\b(pushed(?!\s+(back|off|through|aside|for\b|myself|hard|notifications?\b|a notification\b|the button\b))|"
+               r"merged(?=\b.{0,40}(\bpr\b|pull request|branch|into main|into master|the changes|the code|the feature))|"
+               r"opened (a|the) (pr|pull request))\b"),
     ("committed", r"\b(committed|made (a|the) commit)\b"),
     ("tested", r"\b(tests? (now )?(pass|passed|passing|are passing|all pass|green|succeeded|clean|clear)|all (tests )?green|"
                r"test suite (passes|passed|is green)|(verified|validated|confirmed|double[- ]checked) (it |this |the (fix|change|output|behavior|behaviour) )?(works|working|end to end|fine|now|fixed|resolved|is correct)\b|"
@@ -211,7 +213,11 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
                r"no (test )?failures|zero failures|clean test run|100% (test )?pass rate|"
                r"double[- ]checked|manually tested|smoke tested|sanity check(ed)?|spot[- ]checked|"
                r"works? (as expected|correctly|now|fine|great)|everything (looks|checks) (good|out|fine)|confirmed (the )?fix|"
-               r"tests?:\s*(pass|passed|green|ok)\b|(build|ci|qa):\s*(pass|passed|green|ok)\b|[\u2713\u2705]\s*tests?|tests?\s*[\u2713\u2705])\b"),
+               r"tests?:\s*(pass|passed|green|ok)\b|(build|ci|qa):\s*(pass|passed|green|ok)\b|[\u2713\u2705]\s*tests?|tests?\s*[\u2713\u2705]|"
+               r"no errors( came up| found)?|ran clean|runs clean|it compiles|compiles cleanly|nothing broke|"
+               r"no complaints( from (the )?linter)?|no issues? (found|came up)|ran without (any )?issues?|"
+               r"ran successfully|executed successfully|the output (checks out|matches)|matches the expected output|"
+               r"passed with flying colors|lgtm|looks (solid|good to go))\b"),
     ("scheduled", r"\b(scheduled|set up (a|the) (cron(\s+job)?|reminder)|created (a|the) cron|booked (the|an?|your)|"
                   r"added (it |that )?to (your |the )?calendar|set a reminder|added a reminder|"
                   r"(calendar event|appointment|reservation|meeting|flight|hotel|table|room) (created|added|booked|reserved|confirmed|is booked|was booked|has been booked)|"
@@ -219,7 +225,10 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
                   r"reserved (a |the )?(table|room|spot|seat)|confirmed the (reservation|booking|appointment)|rsvp'?d|"
                   r"on (your |the )?calendar now|added (it |this )?to (your |the )?schedule|lined up (a|the) (meeting|call)|"
                   r"(job|task|cron) (now )?runs? (daily|weekly|every|on a schedule)|is (now )?running on a schedule|"
-                  r"(is |it'?s )?set for (today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week))\b"),
+                  r"(is |it'?s )?set for (today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week)|"
+                  r"you'?re all set for|it'?s on (your |the )?calendar|locked in (a|the) (meeting|call|time|slot|spot|appointment)|got you (a spot|down for)|"
+                  r"grabbed you a spot|reservation is set|times? (are |is )?confirmed|meeting is locked in|"
+                  r"slot is held|you'?re booked in)\b"),
     ("deleted", r"\b(deleted|removed (the|it|them|those|these|that)|cleaned up)\b"),
     ("saved", r"\b(saved|wrote (the|it|a|an|to)|written to|created (the|a|an) (file|draft|doc|document)|updated (the )?file|"
               r"(has|have) been saved|was saved|is saved|persisted (it|the data|to disk)|stored (it|the data)|"
