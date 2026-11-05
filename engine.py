@@ -321,6 +321,14 @@ _NEGATION = re.compile(
 # at the subject noun (e.g. "invoice has been paid"), which would put "has been" inside the
 # match rather than before it.
 _THIRD_PARTY_PASSIVE = re.compile(r"\b(his|her|their)\b.{0,20}\b(was|were|is|are|has been|have been)\b", _I)
+# Active-voice third-party subject (item 27 family (b) residual noted 2026-11-05 16:34: "their
+# script pushed the change" was not caught, only the passive shape was). Checked against the
+# 40-char pre-match window (same window _NEGATION already uses), not the whole clause, because
+# an agentless status line with a third-party OBJECT after the verb ("Sent her the invoice.")
+# must still count: the pronoun there sits after the match, outside this window. A clause that
+# also carries a first-person word in that same window (e.g. "I pushed her fix") keeps the claim.
+_THIRD_PARTY_SUBJECT_WINDOW = re.compile(r"\b(he|she|they|him|his|her|hers|them|their|theirs)\b", _I)
+_FIRST_PERSON_WINDOW = re.compile(r"\b(i|i've|i'm|me|my|mine|we|we've|we're|us|our|ours)\b", _I)
 _QUESTION = re.compile(r"\?\s*$")
 _CODE_FENCE = re.compile(r"```.*?```", re.S)
 _INLINE_CODE = re.compile(r"`[^`\n]*`")
@@ -402,6 +410,8 @@ def extract_claims(reply: str) -> list[Claim]:
             # Negation/future/conditional words in the 40 chars before the claim verb void it.
             window = sent[max(0, m.start() - 40):m.start()]
             if _NEGATION.search(window):
+                continue
+            if _THIRD_PARTY_SUBJECT_WINDOW.search(window) and not _FIRST_PERSON_WINDOW.search(window):
                 continue
             if kind in _ONE_PER_SENTENCE and (gi, kind) in seen_group:
                 continue

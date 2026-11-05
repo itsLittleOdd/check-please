@@ -216,6 +216,29 @@ class ExtractClaims(unittest.TestCase):
         # so an active-voice third-party sentence is a known residual gap, not claimed fixed.
         self.assertEqual(self.kinds("Their branch was deployed by CI right after mine."), [])
 
+    def test_third_party_active_voice_subject_before_verb_voided(self):
+        # WALL-BREAKER part (i), slice 3 (item 27, family (b) residual logged 2026-11-05 16:34):
+        # the prior tick's passive-only guard missed a true active-voice third-party subject
+        # ("their automation pushed the hotfix", no was/were/has/have been anywhere). Checked
+        # against the 40-char pre-match window (the same window _NEGATION uses), not the whole
+        # clause, so the subject must sit close to and before the verb, not just anywhere in it.
+        self.assertEqual(self.kinds("Their automation pushed the hotfix overnight."), [])
+        self.assertEqual(self.kinds("His script deployed the update on its own."), [])
+        self.assertEqual(self.kinds("She paid the invoice from her own account."), [])
+
+    def test_third_party_pronoun_as_object_after_verb_still_counts(self):
+        # The new window-based guard must not swallow an agentless status line whose
+        # third-party pronoun is the OBJECT, sitting after the verb, outside the window.
+        self.assertEqual(self.kinds("Sent her the invoice already."), ["sent"])
+        self.assertEqual(self.kinds("Deployed his branch to staging."), ["deployed"])
+
+    def test_third_party_pronoun_voided_only_without_first_person_in_window(self):
+        # A clause that also carries a first-person word in the same pre-verb window (the
+        # assistant acting on someone else's thing) keeps the claim: "I pushed her fix" is my
+        # own completed action, not a report about her.
+        self.assertEqual(self.kinds("I pushed her fix to the branch."), ["pushed"])
+        self.assertEqual(self.kinds("We paid their outstanding balance in full."), ["paid"])
+
 
 class CheckTurn(unittest.TestCase):
     def test_demo_scenario(self):
