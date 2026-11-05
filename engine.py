@@ -314,6 +314,13 @@ _NEGATION = re.compile(
     r"\b(the|our|their) (customer|client|user|vendor|other (team|side)|supplier)\b.{0,25}\b(said|told|mentioned|claimed|reported|says|confirmed)\b|"
     r"draft(ing)?\s+(a|an|the|it|this|up)|to draft|will draft)\b"
     r"|'ll\b", _I)
+# A passive clause whose subject is someone ELSE's thing (his/her/their, never my/our) is a
+# report about someone else's state, not the assistant's own completed action (item 27 family
+# (b) residual, real audit shape: "her reply was sent yesterday"). Checked against the whole
+# clause, not the 40-char pre-match window, because the claim pattern itself can match starting
+# at the subject noun (e.g. "invoice has been paid"), which would put "has been" inside the
+# match rather than before it.
+_THIRD_PARTY_PASSIVE = re.compile(r"\b(his|her|their)\b.{0,20}\b(was|were|is|are|has been|have been)\b", _I)
 _QUESTION = re.compile(r"\?\s*$")
 _CODE_FENCE = re.compile(r"```.*?```", re.S)
 _INLINE_CODE = re.compile(r"`[^`\n]*`")
@@ -385,6 +392,8 @@ def extract_claims(reply: str) -> list[Claim]:
         if re.match(r"^or\b", sent, _I):
             continue
         if _QUESTION.search(sent):
+            continue
+        if _THIRD_PARTY_PASSIVE.search(sent):
             continue
         for kind, pat in _CLAIM_PATTERNS:
             m = pat.search(sent)

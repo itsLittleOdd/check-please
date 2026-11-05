@@ -194,6 +194,28 @@ class ExtractClaims(unittest.TestCase):
         self.assertEqual(self.kinds("Tests pass.\n| step | status |\n| --- | --- |\n| deploy | sent |\n"),
                          ["tested"])
 
+    def test_third_party_passive_subject_is_not_a_claim(self):
+        # WALL-BREAKER part (i), slice 2 (item 27): a passive sentence whose subject is someone
+        # ELSE's thing (his/her/their, not my/our) is a report about someone else's state, not
+        # the assistant's own completed action. Invented examples; real audit family (b) named
+        # this exact shape ("her reply was sent yesterday") as a false alarm.
+        self.assertEqual(self.kinds("Her reply was sent yesterday."), [])
+        self.assertEqual(self.kinds("Their invoice has been paid already by the vendor."), [])
+        self.assertEqual(self.kinds("His branch was pushed before I even looked at it."), [])
+
+    def test_my_our_passive_subject_still_counts(self):
+        # Passive voice about the ASSISTANT's own work still counts (family (b): "Only first
+        # person... or passive about the assistant's own work in this reply count"). The
+        # his/her/their guard must not swallow my/our possessives.
+        self.assertEqual(self.kinds("My reply was sent to Dana."), ["sent"])
+        self.assertEqual(self.kinds("Our invoice has been paid."), ["paid"])
+
+    def test_third_party_active_subject_doing_their_own_thing_voided(self):
+        # A third party performing their own action (not reported speech, not passive) is also
+        # not the assistant's claim. Kept narrow: only his/her/their + was/were/has/have been,
+        # so an active-voice third-party sentence is a known residual gap, not claimed fixed.
+        self.assertEqual(self.kinds("Their branch was deployed by CI right after mine."), [])
+
 
 class CheckTurn(unittest.TestCase):
     def test_demo_scenario(self):
