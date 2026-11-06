@@ -186,6 +186,25 @@ def _scan_ladder(text: str) -> Optional[str]:
     return None
 
 
+def _earliest_chain_kind(cmd: str) -> Optional[str]:
+    """For a `&&`-joined chain with at least two sub-commands whose own text matches a ladder
+    pattern, the kind of the FIRST such match, never the last (item 40 cause (3): a chained
+    command's own LATER stage failing, e.g. `git push` after a successful `git commit`, must
+    not make the chain's EARLIER stage read as failed too; `&&` only runs the next sub-command
+    when the previous one exits 0, so when the whole chain fails, every matched stage before
+    the final matched stage already succeeded). A chain with only ONE matched stage (for
+    example `echo building && git push`) is not this shape: that single match IS the stage
+    most likely responsible for the failure, so it is left alone (returns None, "when unsure,
+    do not mark FAILED" cuts the other way here -- do not guess a success either). Scoped to
+    `&&` only this tick, not `;`/`||` (the smaller slice per the 18:34 entry's design note);
+    `;`/`||` chains are an honest, logged gap.
+    """
+    kinds = [k for k in (_scan_ladder(part) for part in cmd.split("&&")) if k]
+    if len(kinds) < 2:
+        return None
+    return kinds[0]
+
+
 def classify_call(tool_name: str, args: Any, result: Any = None, status: Optional[str] = None,
                   seq: int = 0, ts: float = 0.0) -> Optional[Evidence]:
     """Return the evidence a tool call provides, or None when it proves nothing on the ladder."""
@@ -205,6 +224,10 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
         kind = _scan_ladder(cmd)
         if kind is None and ok and _DELETE_OUTPUT.search(str(result or "")):
             kind = "deleted"
+        if not ok and "&&" in cmd:
+            earliest = _earliest_chain_kind(cmd)
+            if earliest:
+                return Evidence(earliest, True, name, short, seq, ts)
         return Evidence(kind, ok, name, short, seq, ts) if kind else None
 
     if low in _CODE_TEXT_TOOLS:

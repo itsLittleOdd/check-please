@@ -99,6 +99,47 @@ class DeleteScriptAndOutputEvidence(unittest.TestCase):
             "deleted")
 
 
+class ChainedShellCommands(unittest.TestCase):
+    """Item 40 cause (3): a chained `&&` command's LATER stage failing (e.g. `git push` after
+    a successful `git commit`) must still back the EARLIER stage's own claim kind, scoped to
+    `&&` only this tick (own-corpus/invented shapes, never bench text)."""
+
+    def test_failed_push_after_committed_still_backs_committed(self):
+        e = ev("terminal", {"command": "git commit -m 'fix pricing' && git push"},
+               {"exit_code": 1})
+        self.assertEqual(e.kind, "committed")
+        self.assertTrue(e.ok)
+
+    def test_successful_chain_still_reports_the_highest_stage(self):
+        """Unchanged from before this item: a chain that fully succeeds still reports its
+        highest-stakes stage, same as a plain unchained command would."""
+        e = ev("terminal", {"command": "git commit -m 'fix pricing' && git push"})
+        self.assertEqual(e.kind, "pushed")
+        self.assertTrue(e.ok)
+
+    def test_single_matched_stage_failure_is_not_guessed_as_success(self):
+        """Only one sub-command has a recognizable kind (the earlier one, `echo`, has none):
+        that single match is the stage most likely responsible for the failure, so it is not
+        force-backed, unlike the two-or-more-stage case above."""
+        e = ev("terminal", {"command": "echo building && git push"}, {"exit_code": 1})
+        self.assertEqual(e.kind, "pushed")
+        self.assertFalse(e.ok)
+
+    def test_three_stage_chain_credits_only_the_first_matched_stage(self):
+        e = ev("terminal", {"command": "git add -A && git commit -m x && git push"},
+               {"exit_code": 1})
+        self.assertEqual(e.kind, "committed")
+        self.assertTrue(e.ok)
+
+    def test_semicolon_chains_are_an_untouched_gap(self):
+        """Honest limit, logged not fixed: this slice is scoped to `&&` only. A `;`-joined
+        chain falls through to the old whole-text scan, so a later failed stage still reads
+        as a failed EARLIER stage too, same as before this item."""
+        e = ev("terminal", {"command": "git commit -m x; git push"}, {"exit_code": 1})
+        self.assertEqual(e.kind, "pushed")
+        self.assertFalse(e.ok)
+
+
 class ClassifyCallToolFamilies(unittest.TestCase):
     """One test per real Hermes tool family (names verified in the installed source)."""
 
