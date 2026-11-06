@@ -186,6 +186,41 @@ def _scan_ladder(text: str) -> Optional[str]:
     return None
 
 
+# Item 26(a): a real Hermes lab turn (2026-11-05) showed a full absolute path
+# (".../cp-lab-demo/pricing.py") in a note/proof line. Never show an absolute or
+# home-directory path; collapse it to its basename, which is still enough to identify
+# the file in a short Check line. A relative path is already safe and left as-is.
+def _basename(path: str) -> str:
+    p = path.rstrip("/")
+    return p.rsplit("/", 1)[-1] if "/" in p else p
+
+
+def _display_path(path: str) -> str:
+    if not path:
+        return path
+    if path.startswith("/") or path.startswith("~"):
+        return _basename(path)
+    return path
+
+
+# Item 26(b): the same lab turn showed a proof command line running past 150 chars.
+# Prefer the last `&&`-joined sub-command (usually the one that actually matters) when
+# that alone fits; otherwise hard-truncate with an ellipsis rather than silently cutting
+# off mid-flag with no indication anything was dropped.
+_MAX_PROOF_CMD = 150
+
+
+def _shorten_command(cmd: str) -> str:
+    line = cmd.strip().splitlines()[0] if cmd.strip() else ""
+    if len(line) <= _MAX_PROOF_CMD:
+        return line
+    if "&&" in line:
+        last = line.rsplit("&&", 1)[-1].strip()
+        if last and len(last) <= _MAX_PROOF_CMD:
+            return last
+    return line[: _MAX_PROOF_CMD - 3].rstrip() + "..."
+
+
 def _earliest_chain_kind(cmd: str) -> Optional[str]:
     """For a `&&`-joined chain with at least two sub-commands whose own text matches a ladder
     pattern, the kind of the FIRST such match, never the last (item 40 cause (3): a chained
@@ -220,7 +255,7 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
 
     if low in {"terminal", "shell", "bash", "run_command", "execute_command"}:
         cmd = str(a.get("command") or a.get("cmd") or "")
-        short = cmd.strip().splitlines()[0][:160] if cmd.strip() else ""
+        short = _shorten_command(cmd)
         kind = _scan_ladder(cmd)
         if kind is None and ok and _DELETE_OUTPUT.search(str(result or "")):
             kind = "deleted"
@@ -236,7 +271,7 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
         # form fill/click/navigate call matches nothing here, which is the point: a form submit
         # is not a send unless the code actually posts somewhere (webhook URL, mail API, etc.).
         code = str(a.get("code") or a.get("script") or "")
-        short = code.strip().splitlines()[0][:160] if code.strip() else ""
+        short = _shorten_command(code)
         kind = _scan_ladder(code)
         if kind is None and ok and _DELETE_OUTPUT.search(str(result or "")):
             kind = "deleted"
@@ -250,7 +285,7 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
             kind = "saved_code"
         else:
             kind = "saved"
-        return Evidence(kind, ok, name, path[:160], seq, ts)
+        return Evidence(kind, ok, name, _display_path(path)[:160], seq, ts)
 
     if low in {"cronjob", "cron", "schedule", "cronjob_manage"}:
         action = str(a.get("action") or "")

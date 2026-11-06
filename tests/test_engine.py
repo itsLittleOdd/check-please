@@ -33,6 +33,24 @@ class ClassifyCall(unittest.TestCase):
         self.assertEqual(ev("write_file", {"path": "drafts/invoice-dana.md"}).kind, "drafted")
         self.assertEqual(ev("write_file", {"path": "notes/meeting.md"}).kind, "saved")
 
+    def test_file_writes_absolute_path_shows_basename_only(self):
+        # Item 26(a): a real Hermes lab turn showed a full absolute path in the proof line
+        # (".../cp-lab-demo/pricing.py", invented shape here, same structure). Never show
+        # an absolute or home-directory path; collapse it to its basename instead.
+        result = ev("write_file", {"path": "/Users/lab/some-project-dir/pricing.py"})
+        self.assertEqual(result.kind, "saved_code")
+        self.assertEqual(result.detail, "pricing.py")
+        self.assertNotIn("/", result.detail)
+
+    def test_file_writes_home_relative_path_shows_basename_only(self):
+        result = ev("write_file", {"path": "~/projects/widget/notes/meeting.md"})
+        self.assertEqual(result.detail, "meeting.md")
+
+    def test_file_writes_relative_path_is_left_as_is(self):
+        # A relative path is already safe (no home directory leaks); do not shorten it.
+        self.assertEqual(ev("write_file", {"path": "drafts/invoice-dana.md"}).detail,
+                          "drafts/invoice-dana.md")
+
     def test_blocked_status_is_failure(self):
         self.assertFalse(ev("send_message", {"to": "x"}, {"ok": True}, status="blocked").ok)
 
@@ -41,6 +59,31 @@ class ClassifyCall(unittest.TestCase):
 
     def test_unrelated_terminal(self):
         self.assertIsNone(ev("terminal", {"command": "ls -la"}))
+
+    def test_terminal_proof_line_over_150_chars_is_trimmed_with_ellipsis(self):
+        # Item 26(b): a real lab turn showed a proof command line running past 150 chars.
+        # Invented shape here: a long cd-into-a-deep-path prefix, then the sub-command that
+        # actually ran the tests, joined with &&. The shortened line should surface the
+        # meaningful last stage, not a mid-flag hard cut.
+        cmd = ("cd /Users/lab/some/very/deeply/nested/project/directory/for/this/scenario/"
+               "that/keeps/going/on/and/on/and/on/for/quite/a/while/longer/than/you/would/"
+               "normally/expect/a/path/to/run && python3 -m unittest -q")
+        self.assertGreater(len(cmd), 150)
+        result = ev("terminal", {"command": cmd})
+        self.assertEqual(result.kind, "tested")
+        self.assertEqual(result.detail, "python3 -m unittest -q")
+        self.assertLessEqual(len(result.detail), 150)
+
+    def test_terminal_proof_line_with_no_safe_split_point_gets_hard_truncated(self):
+        # No &&, so there's no shorter meaningful sub-command to fall back to; truncate
+        # with a visible ellipsis rather than silently dropping the tail with no signal.
+        cmd = "pytest -q " + "x" * 200
+        result = ev("terminal", {"command": cmd})
+        self.assertTrue(result.detail.endswith("..."))
+        self.assertEqual(len(result.detail), 150)
+
+    def test_terminal_proof_line_under_150_chars_is_unchanged(self):
+        self.assertEqual(ev("terminal", {"command": "pytest -q"}).detail, "pytest -q")
 
     def test_generic_check_commands_count_as_tested(self):
         """Item 27 family (e): a real check that isn't a fixed test-runner name still proves
