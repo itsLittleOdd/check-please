@@ -1650,5 +1650,84 @@ class DeletedNounUsesAndPhysicalCleanupIdioms(unittest.TestCase):
             "Deleted the expired session tokens."))
 
 
+class PushedIdiomAndObjectNounsAreNotClaims(unittest.TestCase):
+    """Item 27, seventh direct-kind look ("pushed", the last unchecked
+    kind, 41 real-world flags). Same noun/idiom-object shape already
+    fixed for paid/deployed/saved/deleted: a deadline move or an
+    advocacy/effort idiom is not a git push. Invented examples only; a
+    genuine push must still count."""
+
+    def _kinds(self, text):
+        return [c.kind for c in engine.extract_claims(text)]
+
+    def test_pushed_idiom_and_deadline_objects_are_not_claims(self):
+        self.assertNotIn("pushed", self._kinds(
+            "Pushed the deadline back by two days."))
+        self.assertNotIn("pushed", self._kinds(
+            "Pushed the limits of what the API can do."))
+        self.assertNotIn("pushed", self._kinds(
+            "Pushed the envelope on this design."))
+        self.assertNotIn("pushed", self._kinds(
+            "Pushed the issue to the backlog for later."))
+        self.assertNotIn("pushed", self._kinds(
+            "Pushed the agenda through committee."))
+
+    def test_genuine_pushed_claims_still_count(self):
+        self.assertIn("pushed", self._kinds(
+            "Pushed the branch and opened a pull request."))
+        self.assertIn("pushed", self._kinds(
+            "I pushed the changes to origin."))
+        self.assertIn("pushed", self._kinds(
+            "Merged the PR into main."))
+        self.assertIn("pushed", self._kinds(
+            "Pushed main, CI should pick it up."))
+        self.assertIn("pushed", self._kinds(
+            "I've pushed the fix branch up."))
+
+
+class CommittedIdiomAndIntensifierAdjectivesAreNotClaims(unittest.TestCase):
+    """Item 27, eighth direct-kind look ("committed", the other
+    remaining unchecked kind, 31 real-world flags). Same shape: a
+    non-git completed act with a direct object (crime, suicide,
+    resources, funds) or a bare dedication adjective with an
+    intensifier and no git object is not a git commit. Invented
+    examples only; a genuine commit must still count."""
+
+    def _kinds(self, text):
+        return [c.kind for c in engine.extract_claims(text)]
+
+    def test_committed_non_git_object_nouns_are_not_claims(self):
+        self.assertNotIn("committed", self._kinds(
+            "Committed a crime last year, according to the report."))
+        self.assertNotIn("committed", self._kinds(
+            "Committed suicide after the trial."))
+        self.assertNotIn("committed", self._kinds(
+            "Committed resources to the new initiative."))
+        self.assertNotIn("committed", self._kinds(
+            "Committed funds for the next quarter."))
+
+    def test_committed_intensifier_adjective_is_not_a_claim(self):
+        self.assertNotIn("committed", self._kinds(
+            "The team remains highly committed."))
+        self.assertNotIn("committed", self._kinds(
+            "I'm fully committed to this project."))
+        self.assertNotIn("committed", self._kinds(
+            "He's deeply committed."))
+
+    def test_genuine_committed_claims_still_count(self):
+        self.assertIn("committed", self._kinds(
+            "Committed the fix to the local branch."))
+        self.assertIn("committed", self._kinds(
+            "I made the commit for the pricing change."))
+        self.assertIn("committed", self._kinds(
+            "Committed the hotfix: a1b2c3d."))
+        self.assertIn("committed", self._kinds(
+            "Fixed the bug and committed it."))
+        self.assertIn("committed", self._kinds(
+            "Already committed, ready for review."))
+        self.assertIn("committed", self._kinds(
+            "Just committed the migration script."))
+
+
 if __name__ == "__main__":
     unittest.main()

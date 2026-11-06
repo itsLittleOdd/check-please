@@ -427,10 +427,28 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
              r"notified|delivered (it|the|to)|it'?s been sent|has been sent|have been sent|went out|is out the door)"),
     ("deployed", r"\b(deployed(?!\s+(environment|version|branch|instance|url|preview|slot))|is (now )?live|went live|now live|shipped to prod(uction)?|"
                  r"published(?!\s+(the\s+)?release\s+notes?\b)|released|rolled out)\b"),
-    ("pushed", r"\b(pushed(?!\s+(back|off|through|aside|for\b|myself|hard|notifications?\b|a notification\b|the button\b))|"
+    # Item 27, seventh direct-kind look ("pushed", the last unchecked kind, 41 real-world
+    # flags). Same noun/idiom-object shape already fixed for paid/deployed/saved/deleted:
+    # "pushed the deadline back", "pushed the limits", "pushed the envelope", "pushed the
+    # agenda", "pushed the issue to the backlog" (invented examples) are advocacy/effort
+    # idioms or a deadline move, not a git push. A real push ("pushed the branch", "pushed
+    # the changes", "pushed main") is untouched since none of those nouns are excluded.
+    ("pushed", r"\b(pushed(?!\s+(back|off|through|aside|for\b|myself|hard|notifications?\b|a notification\b|the buttons?\b))"
+               r"(?!\s+(the|an?|my|their|its)\s+(deadline|limits?|envelope|agenda|issue|boundaries|needle|conversation|discussion)\b)|"
                r"merged(?=\b.{0,40}(\bpr\b|pull request|branch|into main|into master|the changes|the code|the feature))|"
                r"opened (a |an |the )?(pr\b|pull request))\b"),
-    ("committed", r"\b(committed(?!\s+to\b)|made (a|the) commit)\b"),
+    # Item 27, eighth direct-kind look ("committed", the other remaining unchecked kind, 31
+    # real-world flags). Two false-positive shapes, same adjective/idiom-object pattern
+    # already fixed for paid/pushed/saved/deleted: (1) "committed" as a non-git completed
+    # act with a direct object ("committed a crime", "committed suicide", "committed
+    # resources/funds/troops/forces to the project") (invented examples); (2) "committed" as
+    # a bare dedication adjective with an intensifier and no git object ("remains highly
+    # committed", "is fully committed", "deeply committed") (invented examples). A real git
+    # commit ("Committed the fix.", "Already committed, ready for review.") is untouched:
+    # neither exclusion list matches its words.
+    ("committed", r"\b(?<!highly )(?<!deeply )(?<!fully )(?<!truly )(?<!totally )(?<!completely )(?<!firmly )"
+                  r"committed(?!\s+to\b)(?!\s+(a |an |)?(crime|crimes|felony|felonies|fraud|suicide|"
+                  r"resources?|funds?|budget|troops|forces|atrocit(y|ies)|offenses?)\b)|made (a|the) commit\b"),
     ("tested", r"\b(tests? (now )?(pass|passed|passing|are passing|all pass|green|succeeded|clean|clear)|all (tests )?green|"
                r"(\w+ )?suite (passes|passed|is green)|(verified|validated|confirmed|double[- ]checked|retested|checked|tested)\b.{0,40}?\b(works|working|end to end|fine|now|fixed|resolved|is correct|gone|cleanly|clean)\b|"
                r"all \d+ tests pass(ed)?|\d+ tests? pass(ed|ing)?\b|all (\d+ )?pass(ed|ing)?\b|\d+ passed\b|"
