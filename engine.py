@@ -354,7 +354,16 @@ _NEGATION = re.compile(
     r"you\s+already|'s\s+\w+\s+already|was\s+already\b|"
     r"\b(he|she|they|someone|anyone)\s+(said|told|mentioned|claimed|reported|says|tells|told us|let (us|me) know)\b|"
     r"\b(the|our|their) (customer|client|user|vendor|other (team|side)|supplier)\b.{0,25}\b(said|told|mentioned|claimed|reported|says|confirmed)\b|"
-    r"draft(ing)?\s+(a|an|the|it|this|up)|to draft|will draft)\b"
+    r"draft(ing)?\s+(a|an|the|it|this|up)|to draft|will draft|"
+    # Item 27, hedge-word push (2026-11-05 21:30): a hedge word ("seems", "appears",
+    # "looks like", "should be") reports the assistant's own uncertainty about a state, not
+    # an assertion that it performed the action this turn (invented examples: "It seems the
+    # invoice is paid already." / "The deposit appears to have cleared." are guesses, not
+    # claims). "should"/"would"/"could" already void via the modal list above; this adds the
+    # non-modal hedge verbs, which the paid/sent families use often in real replies about
+    # money and delivery status the assistant cannot directly observe.
+    r"seems?(?:\s+like)?|appears?(?:\s+to)?|looks?\s+like|\bi\s+(?:think|believe|assume|suspect|guess)\b|"
+    r"probably|presumably|most likely)\b"
     r"|'ll\b", _I)
 # A passive clause whose subject is someone ELSE's thing (his/her/their, never my/our) is a
 # report about someone else's state, not the assistant's own completed action (item 27 family

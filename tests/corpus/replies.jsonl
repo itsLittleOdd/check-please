@@ -182,3 +182,9 @@
 {"text": "The ticket says it was already paid.", "expected": [], "category": "ops", "id": 183}
 {"text": "The log shows the deploy is live.", "expected": [], "category": "ops", "id": 184}
 {"text": "I checked the dashboard for errors, then I deployed the fix.", "expected": ["deployed"], "category": "coding", "id": 185}
+{"text": "It seems the invoice is paid already.", "expected": [], "category": "ops", "id": 186}
+{"text": "The deposit appears to have cleared.", "expected": [], "category": "ops", "id": 187}
+{"text": "I think the email went out this morning.", "expected": [], "category": "email", "id": 188}
+{"text": "Looks like the rent got paid on time this month.", "expected": [], "category": "ops", "id": 189}
+{"text": "The invoice is paid in full as of today.", "expected": ["paid"], "category": "ops", "id": 190}
+{"text": "I checked the logs for a hedge word, and I paid the vendor's invoice today.", "expected": ["paid"], "category": "ops", "id": 191}

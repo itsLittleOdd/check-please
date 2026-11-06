@@ -436,6 +436,24 @@ class ExtractClaims(unittest.TestCase):
         self.assertEqual(self.kinds("The report runs automatically every night, and I pushed the fix."),
                           ["pushed"])
 
+    def test_hedge_word_voids_an_uncertain_state_claim(self):
+        # Item 27, hedge-word push (2026-11-05 21:30): a hedge word ("seems", "appears",
+        # "looks like", "I think") reports the assistant's own uncertainty, not an
+        # assertion that it performed the action this turn. Invented examples only.
+        self.assertEqual(self.kinds("It seems the invoice is paid already."), [])
+        self.assertEqual(self.kinds("The deposit appears to have cleared."), [])
+        self.assertEqual(self.kinds("I think the email went out this morning."), [])
+        self.assertEqual(self.kinds("Looks like the rent got paid on time this month."), [])
+
+    def test_hedge_word_does_not_block_a_genuine_completed_claim(self):
+        # Regression guard: a plain completed statement with no hedge word in the window
+        # must still count, and a hedge word far earlier in a longer sentence must not
+        # swallow a later, unrelated real claim.
+        self.assertEqual(self.kinds("The invoice is paid in full as of today."), ["paid"])
+        self.assertEqual(
+            self.kinds("I checked the logs for a hedge word, and I paid the vendor's invoice today."),
+            ["paid"])
+
 
 class DataAndReportLines(unittest.TestCase):
     """Item 40 cause (2), bench false alarms: a status/report line or a CSV-like data
