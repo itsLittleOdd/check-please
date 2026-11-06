@@ -66,7 +66,11 @@ hermes plugins install check-please
 
 ## Settings
 
-`line`: `all` (default) adds the line under every reply that makes claims, `issues` only when something is not backed, `off` keeps it to `/check`.
+`line`: `all` (default) adds the line under every reply that makes claims, `issues` only when something is stale, failed, or (with `inline_unbacked` on) a high-stakes not-backed claim, `off` keeps it to `/check`.
+
+`inline_unbacked`: off by default. Check, Please is a receipts tool, not a lie detector: a not-backed claim means no receipt was found, which is common and often not an overclaim at all, so by default it only shows in `/check`, never inline (the Desktop pane still lists it today; relabeling it there as "no receipt" is tracked separately). Stale (a claim contradicted by this turn's own evidence) and failed always interrupt the reply, with or without this setting. Turn `inline_unbacked` on to also show not-backed inline for the higher-stakes kinds: sent, paid, deployed, pushed, deleted, scheduled.
+
+`verify_nudge`: on by default. On coding turns, asks the agent to rerun tests before finishing when tests last passed before a later edit with no rerun since.
 
 ## What it touches
 

@@ -976,12 +976,18 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
     return verdicts
 
 
-def summary_line(verdicts: list[Verdict]) -> str:
-    """One line for phones and chat apps. Empty string when there is nothing to report."""
+def summary_line(verdicts: list[Verdict], inline_unbacked: bool = False) -> str:
+    """One line for phones and chat apps. Empty string when there is nothing to report.
+    Item 41 part b (receipts, not a lie detector): a NOT_BACKED claim means no receipt exists,
+    not a proven contradiction, so by default it is counted here only when inline_worthy says so
+    (pass inline_unbacked=True to restore the old higher-stakes-kinds-inline behavior). BACKED,
+    STALE and FAILED counts are unaffected by this setting."""
     if not verdicts:
         return ""
     counts = {"BACKED": 0, "STALE": 0, "FAILED": 0, "NOT_BACKED": 0}
     for v in verdicts:
+        if v.status == "NOT_BACKED" and not inline_worthy(v, inline_unbacked):
+            continue  # no receipt: listed in /check and the Desktop pane, never inline
         counts[v.status] += 1
     parts = []
     if counts["BACKED"]:
@@ -992,7 +998,11 @@ def summary_line(verdicts: list[Verdict]) -> str:
         parts.append(f"{counts['FAILED']} failed")
     if counts["NOT_BACKED"]:
         parts.append(f"{counts['NOT_BACKED']} not backed")
-    worst = next((v for v in verdicts if v.status in {"NOT_BACKED", "FAILED", "STALE"}), None)
+    if not parts:
+        return ""
+    worst = next((v for v in verdicts
+                   if v.status in {"FAILED", "STALE"}
+                   or (v.status == "NOT_BACKED" and inline_worthy(v, inline_unbacked))), None)
     tail = f" First issue: \"{worst.claim.phrase}\" ({worst.note})." if worst else ""
     return f"Check: {', '.join(parts)}.{tail} /check for detail."
 
@@ -1173,23 +1183,25 @@ def verify_nudge_directive(edited_after_pass: bool, last_pass_turn: Optional[int
     }
 
 
-# Kinds whose NOT_BACKED verdict is high-stakes enough to interrupt the reply itself (item 27
-# surface policy, upgrade #4). Everything else still shows up in /check, just not inline.
+# Kinds the optional 'inline_unbacked' setting (default off) restores to the reply line for
+# users who want the old higher-stakes-kinds-inline behavior back (item 41 part b).
 _INLINE_NOT_BACKED_KINDS = {"sent", "paid", "deployed", "pushed", "deleted", "scheduled"}
 
 
-def inline_worthy(v: Verdict) -> bool:
+def inline_worthy(v: Verdict, inline_unbacked: bool = False) -> bool:
     """True when *v* should appear in the reply's own Check line (summary_line), not only in
     /check's full detail. STALE and FAILED are always inline-worthy regardless of kind: both
     mean a claim the agent is actively making right now is contradicted or unproven by this
-    turn's own evidence. NOT_BACKED is inline-worthy only for the higher-stakes kinds in
-    _INLINE_NOT_BACKED_KINDS (sent, paid, deployed, pushed, deleted, scheduled); the low-stakes
-    kinds (saved, tested, committed) that drive most of item 27's real-world false alarms stay
-    out of the reply and only surface in /check, where a user who wants the detail can look.
-    BACKED is never inline-worthy (nothing to flag)."""
+    turn's own evidence (item 41's "receipts" framing: a contradiction is a torn-up receipt,
+    worth flagging in the moment). NOT_BACKED means no receipt exists at all, which is a much
+    more common and much lower-signal case (item 41: 36 of 40.9 real inline alerts per 100 turns
+    were plain NOT_BACKED text claims, not contradictions) -- by default it is never inline, only
+    listed in /check and the Desktop pane. Pass inline_unbacked=True to restore the old behavior
+    for the higher-stakes kinds in _INLINE_NOT_BACKED_KINDS (sent, paid, deployed, pushed,
+    deleted, scheduled) for users who want it. BACKED is never inline-worthy (nothing to flag)."""
     if v.status in {"STALE", "FAILED"}:
         return True
-    if v.status == "NOT_BACKED":
+    if v.status == "NOT_BACKED" and inline_unbacked:
         return v.claim.kind in _INLINE_NOT_BACKED_KINDS
     return False
 

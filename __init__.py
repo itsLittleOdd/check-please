@@ -368,9 +368,11 @@ def on_transform_llm_output(response_text: str = "", session_id: Any = None, **k
         _save_last_reply(sid, engine.claims_payload(verdicts))
         if mode == "off" or not verdicts:
             return None
-        if mode == "issues" and all(v.status == "BACKED" for v in verdicts):
+        inline_unbacked = bool(_settings.get("inline_unbacked", False))
+        if mode == "issues" and not any(
+                engine.inline_worthy(v, inline_unbacked) for v in verdicts):
             return None
-        line = engine.summary_line(verdicts)
+        line = engine.summary_line(verdicts, inline_unbacked)
         return f"{response_text.rstrip()}\n\n{line}" if line else None
     except Exception:
         logger.debug("check-please transform failed", exc_info=True)
@@ -424,6 +426,10 @@ def register(ctx) -> None:
         pass
     try:
         _settings["verify_nudge"] = ctx.get_config("verify_nudge", default=True)
+    except Exception:
+        pass
+    try:
+        _settings["inline_unbacked"] = ctx.get_config("inline_unbacked", default=False)
     except Exception:
         pass
     ctx.register_hook("pre_llm_call", on_pre_llm_call)

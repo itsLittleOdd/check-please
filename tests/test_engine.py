@@ -820,7 +820,12 @@ class CheckTurn(unittest.TestCase):
         line = engine.summary_line(verdicts)
         self.assertIn("1 backed", line)
         self.assertIn("1 stale", line)
-        self.assertIn("1 not backed", line)
+        # Item 41 part b (receipts, not a lie detector): the invoice's NOT_BACKED "sent" claim
+        # is a missing receipt, not a proven contradiction, so it stays /check-only by default
+        # and does not show in the inline Check line.
+        self.assertNotIn("not backed", line)
+        with_inline_unbacked = engine.summary_line(verdicts, inline_unbacked=True)
+        self.assertIn("1 not backed", with_inline_unbacked)
         # Item 18 regression (and its intra-family follow-up fix): pricing.py's edit is now
         # "saved_code" (code family), so it can no longer outrank the invoice's own "drafted"
         # evidence (document family) just because "saved" used to sit above "drafted" on a
@@ -907,7 +912,27 @@ class InlineWorthy(unittest.TestCase):
         self.assertEqual(v.status, "BACKED")
         self.assertFalse(engine.inline_worthy(v))
 
-    def test_not_backed_high_stakes_kinds_are_inline_worthy(self):
+    def test_not_backed_is_never_inline_worthy_by_default(self):
+        """Item 41 part b (receipts, not a lie detector): NOT_BACKED of any kind, including the
+        old high-stakes list, stays /check-only by default -- no receipt is common and low
+        signal, not a proven contradiction like STALE/FAILED."""
+        for reply, kind in [
+            ("Invoice emailed to Dana.", "sent"),
+            ("Charged the customer's card for the deposit.", "paid"),
+            ("Deployed to prod.", "deployed"),
+            ("Pushed the change.", "pushed"),
+            ("Deleted the old backups.", "deleted"),
+            ("Booked the table for 7pm.", "scheduled"),
+            ("The draft is saved.", "saved"),
+            ("Tests pass.", "tested"),
+            ("Committed the fix.", "committed"),
+        ]:
+            v = engine.check_turn(reply, [])[0]
+            self.assertEqual(v.status, "NOT_BACKED")
+            self.assertEqual(v.claim.kind, kind)
+            self.assertFalse(engine.inline_worthy(v), f"{kind} should stay /check-only by default")
+
+    def test_inline_unbacked_setting_restores_high_stakes_kinds_only(self):
         for reply, kind in [
             ("Invoice emailed to Dana.", "sent"),
             ("Charged the customer's card for the deposit.", "paid"),
@@ -917,20 +942,16 @@ class InlineWorthy(unittest.TestCase):
             ("Booked the table for 7pm.", "scheduled"),
         ]:
             v = engine.check_turn(reply, [])[0]
-            self.assertEqual(v.status, "NOT_BACKED")
-            self.assertEqual(v.claim.kind, kind)
-            self.assertTrue(engine.inline_worthy(v), f"{kind} should be inline-worthy")
-
-    def test_not_backed_low_stakes_kinds_are_not_inline_worthy(self):
+            self.assertTrue(engine.inline_worthy(v, inline_unbacked=True),
+                             f"{kind} should be inline-worthy with inline_unbacked=True")
         for reply, kind in [
             ("The draft is saved.", "saved"),
             ("Tests pass.", "tested"),
             ("Committed the fix.", "committed"),
         ]:
             v = engine.check_turn(reply, [])[0]
-            self.assertEqual(v.status, "NOT_BACKED")
-            self.assertEqual(v.claim.kind, kind)
-            self.assertFalse(engine.inline_worthy(v), f"{kind} should stay /check-only")
+            self.assertFalse(engine.inline_worthy(v, inline_unbacked=True),
+                              f"{kind} should stay /check-only even with inline_unbacked=True")
 
 
 class SavedCodeVsSavedDocument(unittest.TestCase):
@@ -1097,7 +1118,9 @@ class PluginHooks(unittest.TestCase):
         m.on_pre_llm_call(session_id="s1", turn_id="t1")
         m.on_post_tool_call(tool_name="write_file", args={"path": "drafts/note.md"}, result={"ok": True}, session_id="s1")
         out = m.on_transform_llm_output(response_text="I emailed the note to Sam.", session_id="s1")
-        self.assertIn("Check: 1 not backed", out)
+        # Item 41 part b: a NOT_BACKED "sent" claim with no inline-worthy verdict in the turn
+        # means the reply gets no appended Check line at all (no receipt, not a contradiction).
+        self.assertIsNone(out)
         self.assertIn("NOT BACKED", m.handle_check("", session_id="s1"))
 
     def test_turn_reset_but_session_evidence_still_backs_a_recap(self):

@@ -122,6 +122,11 @@ class RealHookHarnessTest(unittest.TestCase):
         self.assertIn("1 backed", transformed)
 
     def test_claim_with_no_matching_tool_call_is_not_backed(self):
+        """A NOT_BACKED 'sent' claim with no evidence: item 41 part b means it does not show in
+        the reply's own Check line by default (no receipt is not a proven contradiction), but it
+        still shows up for real through the plugin's own /check command, same handler Discord/
+        Telegram/CLI call when a user types /check (manager._plugin_commands['check']['handler'],
+        read-only use of the structure register_command fills; no separate invoke_command API)."""
         manager = self.plugins.get_plugin_manager()
         manager.discover_and_load(force=True)
 
@@ -134,8 +139,14 @@ class RealHookHarnessTest(unittest.TestCase):
             session_id=session_id,
         )
         transformed = next((r for r in results if isinstance(r, str)), "")
-        self.assertTrue(transformed)
-        self.assertIn("1 not backed", transformed)
+        # No inline-worthy verdict this turn, so transform_llm_output returns None (no
+        # replacement text, nothing appended) rather than a line with no issues to show.
+        self.assertEqual(transformed, "")
+        entry = manager._plugin_commands.get("check")
+        self.assertIsNotNone(entry, "check-please did not register the /check command")
+        detail = entry["handler"](raw_args="", session_id=session_id)
+        self.assertIn("NOT BACKED", detail)
+        self.assertIn("invoice", detail)
 
     def test_tests_pass_two_turns_after_an_edit_is_caught_as_stale_across_a_module_reload(self):
         """Backlog item 6: cross-turn stale, with the record read back from ctx.state (file-backed

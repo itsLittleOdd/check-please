@@ -25,3 +25,8 @@ config_schema:
     default: true
     label: Verify nudge
     description: "On coding turns, ask the agent to rerun tests before finishing when tests last passed before a later edit with no rerun since. Set false to disable."
+  inline_unbacked:
+    type: bool
+    default: false
+    label: Show not-backed claims inline
+    description: "Off by default: a not-backed claim means no receipt was found, not a proven contradiction, so it only shows in /check and the Desktop pane. Set true to also interrupt the reply itself for the higher-stakes kinds (sent, paid, deployed, pushed, deleted, scheduled), the old behavior. Stale and failed claims always interrupt the reply either way."
