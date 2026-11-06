@@ -218,6 +218,37 @@ class ChainedShellCommands(unittest.TestCase):
         self.assertEqual(e.kind, "pushed")
         self.assertFalse(e.ok)
 
+    def test_single_pipe_into_grep_no_match_is_ambiguous_not_failed(self):
+        """New named chain gap, same family as item 40 cause (3): `pytest tests/ |
+        grep -i fail` (invented) exits nonzero when grep finds NO match, meaning no
+        failures were reported, the opposite of what a nonzero exit normally means.
+        The real \"tested\" evidence sits in the left segment, whose own exit code we
+        never see, so this must be no evidence at all, never a guessed FAILED."""
+        e = ev("terminal", {"command": "pytest tests/ | grep -i fail"}, {"exit_code": 1})
+        self.assertIsNone(e)
+
+    def test_single_pipe_into_wc_zero_lines_is_ambiguous_not_failed(self):
+        e = ev("terminal", {"command": "pytest tests/ | grep -c FAILED | wc -l"},
+               {"exit_code": 1})
+        self.assertIsNone(e)
+
+    def test_single_pipe_success_side_unaffected(self):
+        """The guard is scoped to the failure side only (item 40's \"when unsure, do
+        not mark FAILED\" rule). A successful pipe (grep found the expected text,
+        e.g. a summary line) still backs the claim as a normal pass."""
+        e = ev("terminal", {"command": "pytest tests/ | grep -i passed"})
+        self.assertEqual(e.kind, "tested")
+        self.assertTrue(e.ok)
+
+    def test_single_pipe_into_real_second_action_is_unaffected(self):
+        """A pipe into an actual second ladder action (invented: mailing a report) is
+        not this shape -- that stage's own kind already explains the result, so the
+        normal verdict applies and this guard must not swallow it."""
+        e = ev("terminal", {"command": "pytest tests/ | mail -s report team@example.com"},
+               {"exit_code": 1})
+        self.assertEqual(e.kind, "sent")
+        self.assertFalse(e.ok)
+
     def test_double_pipe_chain_success_matching_first_stage_is_trusted(self):
         """The picked kind IS the first sub-command's own kind, which is the only shape an
         overall success can prove without the second side running at all, so this stays

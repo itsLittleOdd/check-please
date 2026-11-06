@@ -292,6 +292,39 @@ def _double_pipe_kind_is_ambiguous(cmd: str, kind: Optional[str]) -> bool:
     return part_kinds[0] != kind
 
 
+_PIPE_FILTER_CMD = re.compile(
+    r"^\s*(grep|egrep|fgrep|wc|head|tail|sort|uniq|cut|awk|sed)\b", _I)
+
+
+def _single_pipe_kind_is_ambiguous(cmd: str, kind: Optional[str]) -> bool:
+    """A new named chain gap, same family as item 40 cause (3) but for a single `|`
+    pipe rather than `&&`/`;`/`||`. A plain `cmd1 | cmd2` pipe runs the left side
+    regardless of its own exit code and feeds its stdout to the right side; bash's
+    default (non-pipefail) exit status reflects ONLY the right side. A real shape
+    this misreads (invented): `pytest tests/ | grep -i fail` exits nonzero when grep
+    finds NO match, i.e. no failures were reported -- the opposite of what a nonzero
+    exit normally signals -- while the ladder match (\"tested\") sits in the LEFT
+    segment, whose own exit code we never see. Scoped narrowly to avoid guessing a
+    verdict either way: only when the matched kind comes from the first segment and
+    every later segment is a known exit-code-untrustworthy filter/report tool (grep,
+    wc, head, tail, sort, uniq, cut, awk, sed) that is not itself the ladder action,
+    so a pipe into a real second action (e.g. a mail or deploy command) is left
+    alone -- that shape is already provable from the second command's own kind.
+    Scoped to the failure side only, matching item 40's \"when unsure, do not mark
+    FAILED\" rule; a pipe into one of these tools on the success side already reads
+    as a normal pass, which this does not change.
+    """
+    if "&&" in cmd or ";" in cmd or "||" in cmd or "|" not in cmd:
+        return False
+    parts = cmd.split("|")
+    if len(parts) < 2:
+        return False
+    first_kind = _scan_ladder(parts[0])
+    if not first_kind or first_kind != kind:
+        return False
+    return all(_PIPE_FILTER_CMD.search(p) for p in parts[1:])
+
+
 def classify_call(tool_name: str, args: Any, result: Any = None, status: Optional[str] = None,
                   seq: int = 0, ts: float = 0.0) -> Optional[Evidence]:
     """Return the evidence a tool call provides, or None when it proves nothing on the ladder."""
@@ -318,6 +351,9 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
         if not ok and ";" in cmd and "&&" not in cmd and _semicolon_kind_is_ambiguous(cmd, kind):
             return None
         if ok and "||" in cmd and "&&" not in cmd and _double_pipe_kind_is_ambiguous(cmd, kind):
+            return None
+        if not ok and "|" in cmd and "&&" not in cmd and ";" not in cmd and "||" not in cmd \
+                and _single_pipe_kind_is_ambiguous(cmd, kind):
             return None
         return Evidence(kind, ok, name, short, seq, ts) if kind else None
 
