@@ -8,6 +8,7 @@ Slash command:
   /check                -> full per-claim detail for the last checked reply
   /check today          -> counts plus every non-backed claim logged today
   /check jobs           -> per cron job claim tally, busiest job first
+  /check subagents      -> each delegated child's own unresolved claim verdicts
 
 No network, no model calls, no shell. Never blocks, approves or edits a tool call.
 """
@@ -68,6 +69,14 @@ _LAST_REPLY_MEM: dict[str, dict] = {}
 _SESSION_EVIDENCE_MEM: dict[str, list[dict]] = {}
 _MAX_SESSION_EVIDENCE = 200
 
+# Subagent child claim log (backlog item 31 part b): parent session_id -> list of records
+# {"child_session_id", "child_status", "ts", "verdicts"} where "verdicts" is a list of
+# engine.verdict_to_dict() shapes, never the raw child_summary text. Same ctx.state-with-
+# in-memory-fallback pattern as the other records above; capped per parent (oldest record
+# dropped first) and across parent sessions (_MAX_SESSIONS trim on write).
+_SUBAGENT_MEM: dict[str, list[dict]] = {}
+_MAX_SUBAGENT_RECORDS_PER_PARENT = 20
+
 
 def _session(sid: Any) -> str:
     return str(sid or "")
@@ -115,6 +124,31 @@ def _save_cron_tally(tally: dict, keep: str | None = None) -> None:
             logger.debug("check-please cron tally write failed", exc_info=True)
     _CRON_TALLY_MEM.clear()
     _CRON_TALLY_MEM.update(tally)
+
+
+def _load_subagent_log() -> dict:
+    ctx = _ctx_box.get("ctx")
+    if ctx is not None:
+        try:
+            return dict(ctx.state.get("subagent_log", default={}) or {})
+        except Exception:
+            logger.debug("check-please subagent log read failed", exc_info=True)
+    return dict(_SUBAGENT_MEM)
+
+
+def _save_subagent_log(data: dict) -> None:
+    if len(data) > _MAX_SESSIONS:
+        for old in list(data)[: len(data) - _MAX_SESSIONS]:
+            data.pop(old, None)
+    ctx = _ctx_box.get("ctx")
+    if ctx is not None:
+        try:
+            ctx.state.set("subagent_log", data)
+            return
+        except Exception:
+            logger.debug("check-please subagent log write failed", exc_info=True)
+    _SUBAGENT_MEM.clear()
+    _SUBAGENT_MEM.update(data)
 
 
 def _today_key() -> str:
@@ -348,14 +382,18 @@ def on_post_tool_call(tool_name: str = "", args: Any = None, result: Any = None,
 def on_subagent_stop(parent_session_id: Any = None, child_session_id: Any = None,
                      child_summary: Any = None, child_status: Any = None,
                      tool_call_history: Any = None, **kwargs: Any) -> None:
-    """Backlog item 31, part (a): a delegated child's own successful tool calls are real
-    work, but the PARENT session's claims about them ("sent"/"pushed"/...) should only be
-    backed by what the child actually did, not trusted on the child's self-reported summary
-    alone. Classifies tool_call_history (metadata only, see engine.classify_subagent_entry)
+    """Backlog item 31: a delegated child's own successful tool calls are real work, but the
+    PARENT session's claims about them ("sent"/"pushed"/...) should only be backed by what the
+    child actually did, not trusted on the child's self-reported summary alone.
+
+    Part (a): classifies tool_call_history (metadata only, see engine.classify_subagent_entry)
     and appends it into the PARENT's own ledger, tagged via_subagent, so the parent's next
-    transform_llm_output check sees it exactly like a call the parent made itself. Part (b)
-    (checking child_summary against the child's own evidence, a /check "Subagents" section)
-    is not built yet.
+    transform_llm_output check sees it exactly like a call the parent made itself.
+
+    Part (b): also checks child_summary against THIS CHILD's own evidence only (never mixed
+    with the parent's or another child's), keeping those verdicts. This turn's child verdicts
+    are folded into the parent's own Check line (engine.append_subagent_note) and logged,
+    verdict-shape only (never the raw child_summary text), for /check subagents.
     """
     try:
         sid = _session(parent_session_id)
@@ -365,18 +403,36 @@ def on_subagent_stop(parent_session_id: Any = None, child_session_id: Any = None
             book = _LEDGER.setdefault(sid, {"turn": "", "seq": 0, "evidence": []})
             seq_start = book["seq"]
         new_evidence = engine.subagent_evidence(tool_call_history, seq_start=seq_start, ts=time.time())
-        if not new_evidence:
-            return None
-        with _LOCK:
-            book["seq"] = seq_start + len(new_evidence)
-            book["evidence"].extend(new_evidence)
-            if len(book["evidence"]) > _MAX_EVIDENCE:
-                del book["evidence"][: len(book["evidence"]) - _MAX_EVIDENCE]
-        for ev in new_evidence:
-            if ev.ok:
-                # Same reuse rule as a parent call (item 27 family f): only a successful
-                # child call is worth remembering for a later-turn recap.
-                _append_session_evidence(sid, ev)
+        if new_evidence:
+            with _LOCK:
+                book["seq"] = seq_start + len(new_evidence)
+                book["evidence"].extend(new_evidence)
+                if len(book["evidence"]) > _MAX_EVIDENCE:
+                    del book["evidence"][: len(book["evidence"]) - _MAX_EVIDENCE]
+            for ev in new_evidence:
+                if ev.ok:
+                    # Same reuse rule as a parent call (item 27 family f): only a successful
+                    # child call is worth remembering for a later-turn recap.
+                    _append_session_evidence(sid, ev)
+        # Part (b): check the child's own summary against ONLY this child's own evidence,
+        # so one honest child does not launder another's overclaim and vice versa.
+        child_verdicts = engine.check_turn(str(child_summary or ""), new_evidence)
+        if child_verdicts:
+            with _LOCK:
+                book.setdefault("subagent_verdicts", []).extend(child_verdicts)
+            record = {
+                "child_session_id": _session(child_session_id),
+                "child_status": str(child_status or ""),
+                "ts": time.time(),
+                "verdicts": [engine.verdict_to_dict(v) for v in child_verdicts],
+            }
+            with _LOCK:
+                log = _load_subagent_log()
+                per_parent = log.setdefault(sid, [])
+                per_parent.append(record)
+                if len(per_parent) > _MAX_SUBAGENT_RECORDS_PER_PARENT:
+                    del per_parent[: len(per_parent) - _MAX_SUBAGENT_RECORDS_PER_PARENT]
+                _save_subagent_log(log)
     except Exception:
         logger.debug("check-please subagent_stop failed", exc_info=True)
     return None
@@ -389,6 +445,7 @@ def on_transform_llm_output(response_text: str = "", session_id: Any = None, **k
         sid = _session(session_id)
         with _LOCK:
             evidence = list(_LEDGER.get(sid, {}).get("evidence", []))
+            subagent_verdicts = list(_LEDGER.get(sid, {}).get("subagent_verdicts", []))
         verdicts = engine.check_turn(response_text or "", evidence)
         rec = _cross_record(sid)
         if rec["edited_after_pass"] and rec["last_pass_turn"] is not None:
@@ -418,13 +475,17 @@ def on_transform_llm_output(response_text: str = "", session_id: Any = None, **k
             _LAST[sid] = verdicts
             _LAST_SESSION[0] = sid
         _save_last_reply(sid, engine.claims_payload(verdicts))
-        if mode == "off" or not verdicts:
+        if mode == "off":
+            return None
+        if not verdicts and not subagent_verdicts:
             return None
         inline_unbacked = bool(_settings.get("inline_unbacked", False))
         if mode == "issues" and not any(
-                engine.inline_worthy(v, inline_unbacked) for v in verdicts):
+                engine.inline_worthy(v, inline_unbacked) for v in verdicts) and not any(
+                engine.inline_worthy(v, inline_unbacked) for v in subagent_verdicts):
             return None
         line = engine.summary_line(verdicts, inline_unbacked)
+        line = engine.append_subagent_note(line, subagent_verdicts, inline_unbacked)
         return f"{response_text.rstrip()}\n\n{line}" if line else None
     except Exception:
         logger.debug("check-please transform failed", exc_info=True)
@@ -477,6 +538,11 @@ def handle_check(raw_args: str = "", session_id: Any = None, **kwargs: Any) -> s
             with _LOCK:
                 tally = _load_cron_tally()
             return engine.jobs_report(tally)
+        if arg == "subagents":
+            with _LOCK:
+                log = _load_subagent_log()
+            sid = _session(session_id) or _LAST_SESSION[0]
+            return engine.subagents_report(log.get(sid, []))
         sid = _session(session_id) or _LAST_SESSION[0]
         with _LOCK:
             verdicts = _LAST.get(sid) or _LAST.get(_LAST_SESSION[0]) or []
@@ -514,4 +580,5 @@ def register(ctx) -> None:
     ctx.register_hook("pre_verify", on_pre_verify)
     ctx.register_command("check", handle_check,
                           description="Show which claims the tool log backs: last reply, "
-                                       "'today' for the day's tally, 'jobs' for per-cron-job tally")
+                                       "'today' for the day's tally, 'jobs' for per-cron-job "
+                                       "tally, 'subagents' for delegated children's own claims")

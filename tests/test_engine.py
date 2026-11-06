@@ -377,6 +377,80 @@ class SubagentClaimCheckClassification(unittest.TestCase):
         self.assertEqual(engine.subagent_evidence("not a list"), [])
 
 
+class SubagentClaimCheckPartB(unittest.TestCase):
+    """Backlog item 31 part (b): check a child's own summary against ONLY that child's own
+    evidence, then fold the result into the parent's check line and a /check subagents log."""
+
+    def test_child_unbacked_claim_with_no_evidence(self):
+        history = [subagent_entry("connectors__gmail__list_messages")]  # proves nothing
+        evidence = engine.subagent_evidence(history)
+        verdicts = engine.check_turn("I emailed Dana the invoice.", evidence)
+        self.assertEqual(len(verdicts), 1)
+        self.assertEqual(verdicts[0].status, "NOT_BACKED")
+
+    def test_child_backed_claim_with_matching_evidence(self):
+        history = [subagent_entry("connectors__gmail__send_email", targets={"to": "dana@example.com"})]
+        evidence = engine.subagent_evidence(history)
+        verdicts = engine.check_turn("Sent the invoice to Dana.", evidence)
+        self.assertEqual(len(verdicts), 1)
+        self.assertEqual(verdicts[0].status, "BACKED")
+
+    def test_append_subagent_note_adds_to_an_existing_line(self):
+        # A failed send is always inline-worthy (STALE/FAILED/EDITED are, regardless of kind;
+        # inline_worthy's own NOT_BACKED suppression only applies to the NOT_BACKED status).
+        failed_send = engine.classify_subagent_entry(subagent_entry("send_message", status="error"))
+        failed = engine.check_turn("Sent the update.", [failed_send])
+        line = engine.append_subagent_note("Check: 1 backed. /check for detail.", failed)
+        self.assertIn("1 subagent claim not backed", line)
+        self.assertIn("/check subagents for detail.", line)
+        self.assertNotIn("/check for detail. 1 subagent", line)  # old tail was stripped, not duplicated
+
+    def test_append_subagent_note_standalone_when_parent_line_is_empty(self):
+        failed_send = engine.classify_subagent_entry(subagent_entry("send_message", status="error"))
+        failed = engine.check_turn("Sent the update.", [failed_send])
+        line = engine.append_subagent_note("", failed)
+        self.assertTrue(line.startswith("Check: 1 subagent claim not backed"))
+
+    def test_append_subagent_note_counts_unbacked_only_with_inline_unbacked_setting(self):
+        """Item 41's receipts policy applies here too: a plain NOT_BACKED claim (no contra-
+        diction, just no evidence) is not inline by default, only via the inline_unbacked
+        setting, same as a parent's own NOT_BACKED claim."""
+        unbacked = engine.check_turn("I emailed Dana the invoice.", [])  # no evidence at all
+        self.assertEqual(engine.append_subagent_note("", unbacked), "")
+        self.assertIn("1 subagent claim not backed",
+                       engine.append_subagent_note("", unbacked, inline_unbacked=True))
+
+    def test_append_subagent_note_leaves_line_untouched_when_nothing_inline_worthy(self):
+        backed = engine.check_turn("Sent the invoice to Dana.",
+                                    engine.subagent_evidence([subagent_entry("send_message", targets={"to": "d"})]))
+        self.assertEqual(engine.append_subagent_note("Check: 1 backed. /check for detail.", backed),
+                         "Check: 1 backed. /check for detail.")
+        self.assertEqual(engine.append_subagent_note("", backed), "")
+
+    def test_subagents_report_lists_unresolved_children_newest_first(self):
+        records = [
+            {"child_session_id": "child-old", "ts": 1.0,
+             "verdicts": [engine.verdict_to_dict(v) for v in
+                          engine.check_turn("Pushed the fix.", [])]},
+            {"child_session_id": "child-new", "ts": 2.0,
+             "verdicts": [engine.verdict_to_dict(v) for v in
+                          engine.check_turn("Deployed to prod.", [])]},
+        ]
+        out = engine.subagents_report(records)
+        self.assertIn("child-new", out)
+        self.assertIn("child-old", out)
+        self.assertLess(out.index("child-new"), out.index("child-old"))
+
+    def test_subagents_report_empty_and_no_unresolved_cases(self):
+        self.assertIn("no subagent runs", engine.subagents_report([]))
+        backed_only = [{"child_session_id": "c1", "ts": 1.0,
+                        "verdicts": [engine.verdict_to_dict(v) for v in
+                                     engine.check_turn("Sent the invoice to Dana.",
+                                                        engine.subagent_evidence(
+                                                            [subagent_entry("send_message", targets={"to": "d"})]))]}]
+        self.assertIn("no unresolved", engine.subagents_report(backed_only))
+
+
 class CallSucceededRealResultShapes(unittest.TestCase):
     """call_succeeded against the EXACT post_tool_call result shapes the installed Hermes source
     returns, not guessed ones. Sources (read-only, ~/.hermes/hermes-agent, verified 2026-11-05):
@@ -1734,6 +1808,104 @@ class PluginHooks(unittest.TestCase):
     def test_pre_verify_never_raises(self):
         m = self.mod
         self.assertIsNone(m.on_pre_verify(session_id=None, coding=True, attempt="not-an-int"))
+
+    def test_subagent_stop_part_b_unbacked_child_claim_notes_the_parents_check_line(self):
+        """Backlog item 31 part (b): a child's claim CONTRADICTED by its own evidence (a
+        failed send) should surface on the PARENT's check line, even though the parent itself
+        made no claim of its own this turn, and show up in /check subagents. FAILED is always
+        inline-worthy regardless of kind, unlike a plain NOT_BACKED claim (item 41 policy)."""
+        m = self.mod
+        sid = "s-subagent-b1"
+        m.on_pre_llm_call(session_id=sid, turn_id="t1")
+        m.on_post_tool_call(tool_name="delegate_task", args={"tasks": [{"prompt": "email Dana"}]},
+                            result={"status": "completed"}, status="success", session_id=sid)
+        m.on_subagent_stop(
+            parent_session_id=sid, child_session_id="child-9",
+            child_summary="Sent the invoice to Dana.", child_status="succeeded",
+            tool_call_history=[{
+                "tool_name": "send_message",
+                "tool_input": {"argument_keys": [], "targets": {"to": "dana@example.com"}},
+                "status": "error",
+            }],
+        )
+        out = m.on_transform_llm_output(response_text="Done for now.", session_id=sid)
+        self.assertIsNotNone(out, "a contradicted subagent claim with nothing of the parent's "
+                                   "own should still produce a standalone check line")
+        self.assertIn("1 subagent claim not backed", out)
+        detail = m.handle_check("subagents", session_id=sid)
+        self.assertIn("child-9", detail)
+        self.assertIn("failed", detail)
+
+    def test_subagent_stop_part_b_backed_child_claim_adds_no_note(self):
+        m = self.mod
+        sid = "s-subagent-b2"
+        m.on_pre_llm_call(session_id=sid, turn_id="t1")
+        m.on_subagent_stop(
+            parent_session_id=sid, child_session_id="child-10",
+            child_summary="Sent the invoice to Dana.", child_status="succeeded",
+            tool_call_history=[{
+                "tool_name": "connectors__gmail__send_email",
+                "tool_input": {"argument_keys": ["to"], "targets": {"to": "dana@example.com"}},
+                "status": "ok",
+            }],
+        )
+        out = m.on_transform_llm_output(response_text="Sent the invoice to Dana.", session_id=sid)
+        self.assertIn("1 backed", out)
+        self.assertNotIn("subagent", out)
+
+    def test_subagent_stop_part_b_does_not_mix_two_childrens_evidence(self):
+        """One honest child's real evidence must never back a different, overclaiming
+        child's summary in the same parent turn."""
+        m = self.mod
+        sid = "s-subagent-b3"
+        m.on_pre_llm_call(session_id=sid, turn_id="t1")
+        m.on_subagent_stop(
+            parent_session_id=sid, child_session_id="child-honest",
+            child_summary="Sent the status update.", child_status="succeeded",
+            tool_call_history=[{
+                "tool_name": "send_message",
+                "tool_input": {"argument_keys": [], "targets": {"to": "team"}}, "status": "ok",
+            }],
+        )
+        m.on_subagent_stop(
+            parent_session_id=sid, child_session_id="child-overclaims",
+            child_summary="Deployed the hotfix to prod.", child_status="succeeded",
+            tool_call_history=[{
+                "tool_name": "connectors__gmail__list_messages", "tool_input": {}, "status": "ok",
+            }],
+        )
+        detail = m.handle_check("subagents", session_id=sid)
+        self.assertIn("child-overclaims", detail)
+        self.assertIn("not backed", detail)
+        self.assertNotIn("child-honest", detail)  # the honest child has no unresolved claim to show
+
+    def test_subagent_log_only_stores_the_matched_claim_sentence_not_unrelated_text(self):
+        """The log stores engine.verdict_to_dict() rows, which carry the matched CLAIM's own
+        sentence, never the whole raw child_summary blob. A sentence with no completion claim
+        in it (here, an unrelated secret-looking token) never becomes part of any verdict and
+        so never reaches the log at all."""
+        m = self.mod
+        sid = "s-subagent-b4"
+        m.on_pre_llm_call(session_id=sid, turn_id="t1")
+        m.on_subagent_stop(
+            parent_session_id=sid, child_session_id="child-11",
+            child_summary=("I emailed Dana the invoice. "
+                            "The internal access code is Q4-SECRET-9981 and must stay private."),
+            child_status="succeeded", tool_call_history=[],
+        )
+        log = m._load_subagent_log()
+        self.assertIn(sid, log)
+        dumped = str(log[sid])
+        self.assertNotIn("Q4-SECRET-9981", dumped,
+                          "only the matched claim's own sentence is stored, never an unrelated "
+                          "sentence from the same child_summary")
+        self.assertIn("emailed", dumped)
+
+    def test_subagent_stop_never_raises(self):
+        m = self.mod
+        self.assertIsNone(m.on_subagent_stop(parent_session_id=None, tool_call_history="garbage"))
+        self.assertIsNone(m.on_subagent_stop(parent_session_id="s", child_summary=object(),
+                                             tool_call_history=[{"bad": "shape"}]))
 
 
 class VerifyNudgeDirective(unittest.TestCase):

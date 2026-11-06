@@ -285,6 +285,38 @@ class RealHookHarnessTest(unittest.TestCase):
         transformed = next((r for r in results if isinstance(r, str)), "")
         self.assertIn("1 backed", transformed, "the child's real send did not back the parent's claim")
 
+    def test_subagent_stop_part_b_catches_a_childs_own_overclaim(self):
+        """Backlog item 31 part (b): a child's self-reported summary CONTRADICTED by its OWN
+        tool call history (a failed send) should surface on the PARENT's check line,
+        dispatched through the real PluginManager, not just through a direct module call.
+        FAILED is always inline-worthy regardless of kind, unlike a plain NOT_BACKED claim
+        (item 41's receipts policy)."""
+        manager = self.plugins.get_plugin_manager()
+        manager.discover_and_load(force=True)
+        session_id = "sess-real-hook-7"
+
+        manager.invoke_hook("pre_llm_call", session_id=session_id, turn_id="turn-1")
+        manager.invoke_hook(
+            "post_tool_call", tool_name="delegate_task", args={"tasks": [{"prompt": "email Dana"}]},
+            result={"status": "completed"}, status="success", session_id=session_id,
+        )
+        manager.invoke_hook(
+            "subagent_stop",
+            parent_session_id=session_id, child_session_id="child-overclaim",
+            child_summary="Sent the invoice to Dana.", child_status="succeeded",
+            tool_call_history=[{
+                "tool_name": "send_message",
+                "tool_input": {"argument_keys": [], "targets": {"to": "dana@example.com"}},
+                "status": "error",
+            }],
+        )
+        results = manager.invoke_hook(
+            "transform_llm_output", response_text="All set for now.", session_id=session_id,
+        )
+        transformed = next((r for r in results if isinstance(r, str)), "")
+        self.assertIn("1 subagent claim not backed", transformed,
+                       "a child's own contradicted claim never reached the parent's check line")
+
 
 if __name__ == "__main__":
     unittest.main()

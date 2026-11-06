@@ -1407,6 +1407,49 @@ def jobs_report(tally: dict, char_limit: int = 1500) -> str:
     return _truncate_for_phone("\n".join(lines), char_limit)
 
 
+def append_subagent_note(line: str, subagent_verdicts: list[Verdict], inline_unbacked: bool = False) -> str:
+    """Backlog item 31 part (b): fold inline-worthy verdicts from this turn's subagent_stop
+    calls into the parent's own Check line. A parent relaying a child's claim ("the subagent
+    sent the email") deserves the same in-the-moment signal as a claim the parent made itself.
+    *line* is whatever summary_line already built for the parent's own claims (possibly empty
+    when the parent made none). Returns *line* unchanged when no subagent verdict is
+    inline-worthy."""
+    count = sum(1 for v in subagent_verdicts if inline_worthy(v, inline_unbacked))
+    if not count:
+        return line
+    plural = "s" if count != 1 else ""
+    note = f"{count} subagent claim{plural} not backed"
+    if not line:
+        return f"Check: {note}. /check subagents for detail."
+    if line.endswith("/check for detail."):
+        line = line[: -len("/check for detail.")].rstrip()
+    return f"{line} {note}. /check subagents for detail."
+
+
+def subagents_report(records: list[dict], char_limit: int = 1500) -> str:
+    """Phone-sized digest for /check subagents (backlog item 31 part b): every delegated
+    child's own unresolved claim verdicts this session, newest child first. *records* is the
+    list of {"child_session_id", "child_status", "ts", "verdicts"} rows a parent session's
+    on_subagent_stop appends, where "verdicts" is a list of engine.verdict_to_dict() shapes."""
+    if not records:
+        return "Check, Please: no subagent runs logged yet."
+    label = {"NOT_BACKED": "not backed", "STALE": "stale", "FAILED": "failed", "EDITED": "proof edited"}
+    lines = ["Check, Please: subagents"]
+    shown_any = False
+    for rec in sorted(records, key=lambda r: r.get("ts", 0), reverse=True):
+        issues = [v for v in (rec.get("verdicts") or []) if v.get("status") in label]
+        if not issues:
+            continue
+        child = rec.get("child_session_id") or "unknown"
+        lines.append(f"- child {child}:")
+        for v in issues:
+            lines.append(f"  {label.get(v['status'], v['status'])}: \"{v.get('text', '')}\" ({v.get('note', '')})")
+        shown_any = True
+    if not shown_any:
+        return "Check, Please: no unresolved subagent claims logged."
+    return _truncate_for_phone("\n".join(lines), char_limit)
+
+
 def verify_nudge_directive(edited_after_pass: bool, last_pass_turn: Optional[int],
                             pass_detail: str) -> Optional[dict]:
     """pre_verify continue directive (backlog item 9): when the edited-code verify gate fires
