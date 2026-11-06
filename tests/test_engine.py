@@ -85,6 +85,15 @@ class DeleteScriptAndOutputEvidence(unittest.TestCase):
         self.assertEqual(
             ev("terminal", {"command": "./backup.sh"}, "Deleted 3 stale files").kind, "deleted")
 
+    def test_output_count_number_first_order_still_backs_deleted(self):
+        # Item 40 cause (4) residual: the bench's real shape puts the number before the verb
+        # ("37 of 45 rows deleted"), not after it ("Deleted 37 rows") like the original guard
+        # expected. Invented examples only, never bench text.
+        self.assertEqual(
+            ev("terminal", {"command": "./purge.sh"}, "37 of 45 stale rows deleted.").kind, "deleted")
+        self.assertEqual(
+            ev("terminal", {"command": "./purge.sh"}, "12 old sessions removed.").kind, "deleted")
+
     def test_output_count_ignored_on_failure(self):
         self.assertIsNone(
             ev("terminal", {"command": "./backup.sh"}, "Removed 12 old sessions.", status="error"))
@@ -355,6 +364,28 @@ class ExtractClaims(unittest.TestCase):
         # same sentence must still count.
         self.assertEqual(self.kinds("4 of 5 tests pass, and I deployed the fix to staging."),
                          ["deployed"])
+
+    def test_partial_delete_counts_are_not_a_deleted_claim(self):
+        # Item 40 cause (4) residual (bench's "37 of 45 deleted" false alarm): applying the
+        # same partial-count logic used for "tested" to "deleted", since a partial delete is
+        # not a completed "deleted" claim either. Invented examples only, never bench text.
+        self.assertEqual(self.kinds("Ran the cleanup job: 37 of 45 stale rows deleted so far."), [])
+        self.assertEqual(self.kinds("3/9 old sessions were purged before the script errored."), [])
+
+    def test_whole_delete_counts_still_count(self):
+        self.assertEqual(self.kinds("Deleted all 45 stale rows."), ["deleted"])
+        self.assertEqual(self.kinds("45 of 45 stale rows deleted."), ["deleted"])
+
+    def test_partial_delete_count_does_not_block_other_claims_in_sentence(self):
+        self.assertEqual(self.kinds("37 of 45 rows deleted, and I pushed the migration script."),
+                         ["pushed"])
+
+    def test_partial_count_not_yet_scoped_to_sent_or_paid(self):
+        # Honest residual: this slice only scoped the whole-sentence partial-count guard to
+        # tested/deleted (the two kinds with a known real false alarm). "sent"/"paid" partial
+        # counts still read as a full claim; not fixed here, logged as a known gap.
+        self.assertEqual(self.kinds("Sent 4 of 5 invitations before the mail server timed out."),
+                         ["sent"])
 
 
 class DataAndReportLines(unittest.TestCase):

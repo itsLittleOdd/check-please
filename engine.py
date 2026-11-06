@@ -89,9 +89,9 @@ _DELETE_SCRIPT_CMD = re.compile(
     r"\b[\w./-]*\b(delete|purge|prune|remove|cleanup|clean_up)\w*\.(py|sh|rb|js|ts|pl|bash)\b|"
     r"\bdelete\s+from\s+\w+", _I)
 # Output evidence for a delete claim when the command text itself doesn't say so (invented
-# examples: "Removed 12 old sessions.", "Deleted 3 stale files"). Scanned on the call's result
-# text only, never on claim text.
-_DELETE_OUTPUT = re.compile(r"\b(removed|deleted)\s+\d+\b", _I)
+# examples: "Removed 12 old sessions.", "Deleted 3 stale files", and the number-first order
+# "37 of 45 rows deleted."). Scanned on the call's result text only, never on claim text.
+_DELETE_OUTPUT = re.compile(r"\b(removed|deleted)\s+\d+\b|\b\d+\s+(?:\w+\s+){0,2}(?:removed|deleted)\b", _I)
 _SCHEDULE_CMD = re.compile(r"\bhermes\s+cron\s+(create|add|edit)\b|\bcrontab\s+-[el]?\b|\blaunchctl\s+(load|bootstrap)\b", _I)
 
 _SEND_TOOL = re.compile(r"(^|_|\.|-)(send|post|reply|tweet|email|mail|message|dm|publish_post|create_post|chat_post)", _I)
@@ -501,7 +501,15 @@ def extract_claims(reply: str) -> list[Claim]:
             m = pat.search(sent)
             if not m:
                 continue
-            if kind == "tested" and _has_partial_count(sent):
+            # A partial count voids a full-completion claim for "tested" and "deleted"
+            # kinds (invented example: "37 of 45 rows deleted" is a partial action, not a
+            # completed "deleted" claim, item 40 cause 1's same logic applied to deleted).
+            # Scoped to these two kinds, not every kind: the whole-sentence scan (needed
+            # because the count usually sits well before the matched verb, outside the
+            # 40-char window) would otherwise void an unrelated claim later in the same
+            # sentence, e.g. "4 of 5 tests pass, and I deployed the fix" must still count
+            # "deployed".
+            if kind in ("tested", "deleted") and _has_partial_count(sent):
                 continue
             # Negation/future/conditional words in the 40 chars before the claim verb void it.
             window = sent[max(0, m.start() - 40):m.start()]

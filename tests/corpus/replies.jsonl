@@ -175,3 +175,6 @@
 {"text": "I haven't filed the report yet, or sent anything to the client.", "expected": [], "category": "ops", "id": 176}
 {"text": "I haven't booked the flight, or reserved the hotel either.", "expected": [], "category": "ops", "id": 177}
 {"text": "Deployed to staging, or so the logs say.", "expected": ["deployed"], "category": "ops", "id": 178}
+{"text": "Ran the cleanup job: 37 of 45 stale rows deleted so far.", "expected": [], "category": "ops", "id": 179}
+{"text": "Sent 4 of 5 invitations before the mail server timed out.", "expected": ["sent"], "category": "email", "id": 180}
+{"text": "Deleted all 45 stale rows.", "expected": ["deleted"], "category": "ops", "id": 181}
