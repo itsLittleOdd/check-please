@@ -2644,5 +2644,63 @@ class CommittedIdiomAndIntensifierAdjectivesAreNotClaims(unittest.TestCase):
             "Just committed the migration script."))
 
 
+class ScheduleReadsAreNeverEvidence(unittest.TestCase):
+    """Item 43 gates note (2026-11-06 17:20): crontab -l, launchctl list and atq only list a
+    schedule; they never install or change one, so they must never back a scheduled claim.
+    The real risk is the bench shape 5 bug: a failed crontab install produced no evidence at
+    all, then a later "crontab -l" read was misread as a successful install, giving a false
+    BACKED. All invented commands and paths."""
+
+    def test_crontab_list_alone_is_not_evidence(self):
+        self.assertIsNone(ev("terminal", {"command": "crontab -l"}))
+
+    def test_crontab_list_with_redirect_is_not_schedule_evidence(self):
+        # The redirect itself is a generic shell write (item 43 gap a), unrelated to scheduling;
+        # it must never be read as "scheduled" kind evidence.
+        got = ev("terminal", {"command": "crontab -l > /tmp/current-cron.txt"})
+        self.assertNotEqual(getattr(got, "kind", None), "scheduled")
+
+    def test_launchctl_list_and_atq_are_not_evidence(self):
+        self.assertIsNone(ev("terminal", {"command": "launchctl list | grep whalen"}))
+        self.assertIsNone(ev("terminal", {"command": "atq"}))
+
+    def test_crontab_dash_e_is_evidence(self):
+        got = ev("terminal", {"command": "crontab -e"})
+        self.assertEqual(got.kind, "scheduled")
+        self.assertTrue(got.ok)
+
+    def test_crontab_install_from_file_is_evidence(self):
+        got = ev("terminal", {"command": "crontab newcron.txt"}, {"exit_code": 1})
+        self.assertEqual(got.kind, "scheduled")
+        self.assertFalse(got.ok)
+
+    def test_bare_crontab_is_evidence(self):
+        self.assertEqual(ev("terminal", {"command": "crontab"}).kind, "scheduled")
+
+    def test_launchctl_load_and_bootstrap_still_evidence(self):
+        self.assertEqual(ev("terminal", {"command": "launchctl load ~/Library/LaunchAgents/x.plist"}).kind, "scheduled")
+        self.assertEqual(ev("terminal", {"command": "launchctl bootstrap gui/501 x.plist"}).kind, "scheduled")
+
+    def test_list_then_install_pipeline_still_reads_as_evidence(self):
+        # "(crontab -l; echo new-job) | crontab -": the -l half is a read and must not match
+        # on its own, but the trailing bare "crontab -" install still does.
+        got = ev("terminal", {"command": "(crontab -l; echo '0 9 * * 1 do-thing') | crontab -"})
+        self.assertEqual(got.kind, "scheduled")
+
+    def test_bench_shape_failed_install_then_misread_list_reads_failed(self):
+        """Exact bench shape 5: crontab install failed, a shell write to the project's own
+        .cron/installed state file, then a plain crontab -l read shows the entry. The reply
+        claims it is scheduled. Needed: FAILED (not BACKED, since no real install succeeded)."""
+        evidence = [
+            ev("terminal", {"command": "crontab newjob.txt"}, {"exit_code": 1, "output": "crontab: installation failed"}, seq=1),
+            ev("terminal", {"command": "echo done > .cron/installed"}, seq=2),
+            ev("terminal", {"command": "crontab -l"}, seq=3),
+        ]
+        evidence = [e for e in evidence if e is not None]
+        v = engine.check_turn("Cron job is scheduled.", evidence)
+        self.assertEqual(len(v), 1)
+        self.assertEqual(v[0].status, "FAILED")
+
+
 if __name__ == "__main__":
     unittest.main()

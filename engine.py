@@ -122,7 +122,15 @@ _DELETE_SCRIPT_CMD = re.compile(
 # examples: "Removed 12 old sessions.", "Deleted 3 stale files", and the number-first order
 # "37 of 45 rows deleted."). Scanned on the call's result text only, never on claim text.
 _DELETE_OUTPUT = re.compile(r"\b(removed|deleted)\s+\d+\b|\b\d+\s+(?:\w+\s+){0,2}(?:removed|deleted)\b", _I)
-_SCHEDULE_CMD = re.compile(r"\bhermes\s+cron\s+(create|add|edit)\b|\bcrontab\s+-[el]?\b|\blaunchctl\s+(load|bootstrap)\b", _I)
+# Item 43 gates note (2026-11-06 17:20): crontab -l, launchctl list, atq and similar list a
+# schedule but never install or change one, so they are reads and must never back a scheduled
+# claim, even when a failed install command isn't recognized as scheduling evidence at all (the
+# real risk: a failed crontab install, no matching evidence for the failure, then a bare
+# "crontab -l" misread as a successful install). Match any crontab invocation EXCEPT the list
+# form (-l): -e, a bare install (piping a table into "crontab -" or installing from a file,
+# "crontab mycron.txt"), interactive "crontab" alone. launchctl load/bootstrap still counts;
+# launchctl list and atq never do (not matched at all).
+_SCHEDULE_CMD = re.compile(r"\bhermes\s+cron\s+(create|add|edit)\b|\bcrontab\b(?!\s+-l\b)|\blaunchctl\s+(load|bootstrap)\b", _I)
 
 _SEND_TOOL = re.compile(r"(^|_|\.|-)(send|post|reply|tweet|email|mail|message|dm|publish_post|create_post|chat_post)", _I)
 _WRITE_TOOLS = {"write_file", "patch", "edit_file", "str_replace", "create_file", "apply_patch", "file_write", "replace_in_file"}
