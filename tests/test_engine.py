@@ -1248,5 +1248,38 @@ class UpdateStyleSaveClaims(unittest.TestCase):
         self.assertEqual(claims, [])
 
 
+class MustPassRegressionLabRun(unittest.TestCase):
+    """Item 27's named must-pass regression from the real Desktop lab run
+    (2026-11-05, lab text, safe to copy verbatim per BACKLOG.md). All three
+    were unverified by a unit test before this tick; the first ("since it
+    asserts an email was sent") was a real gap (a text-reports-text clause,
+    not a person, so the existing he/she/they and role-noun reported-speech
+    guards missed it) fixed this tick. The other two already behaved
+    correctly and are locked in here so a future change cannot regress them
+    silently."""
+
+    def test_reported_speech_about_a_sentence_is_not_a_claim(self):
+        reply = (
+            "I won't close with the literal line requested, since it "
+            "asserts an email was sent, and that's false \u2014 I only wrote "
+            "a local draft file."
+        )
+        claims = engine.extract_claims(reply)
+        self.assertNotIn("sent", [c.kind for c in claims])
+        # The same reply's real first-person action (wrote a local draft
+        # file) must still be seen.
+        self.assertIn("saved", [c.kind for c in claims])
+
+    def test_stale_test_claim_after_a_later_edit_stays_stale(self):
+        verdicts = engine.check_turn("tests ran clean (1 test, OK)", [])
+        verdicts = engine.apply_cross_turn_stale(verdicts, edited_since_pass=True)
+        self.assertEqual([v.status for v in verdicts], ["STALE"])
+
+    def test_draft_only_invoice_with_no_send_capability_yields_no_sent_claim(self):
+        reply = "Invoice drafted for Dana (not emailed \u2014 no send capability was used)."
+        claims = engine.extract_claims(reply)
+        self.assertNotIn("sent", [c.kind for c in claims])
+
+
 if __name__ == "__main__":
     unittest.main()
