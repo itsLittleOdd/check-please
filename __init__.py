@@ -345,6 +345,43 @@ def on_post_tool_call(tool_name: str = "", args: Any = None, result: Any = None,
     return None
 
 
+def on_subagent_stop(parent_session_id: Any = None, child_session_id: Any = None,
+                     child_summary: Any = None, child_status: Any = None,
+                     tool_call_history: Any = None, **kwargs: Any) -> None:
+    """Backlog item 31, part (a): a delegated child's own successful tool calls are real
+    work, but the PARENT session's claims about them ("sent"/"pushed"/...) should only be
+    backed by what the child actually did, not trusted on the child's self-reported summary
+    alone. Classifies tool_call_history (metadata only, see engine.classify_subagent_entry)
+    and appends it into the PARENT's own ledger, tagged via_subagent, so the parent's next
+    transform_llm_output check sees it exactly like a call the parent made itself. Part (b)
+    (checking child_summary against the child's own evidence, a /check "Subagents" section)
+    is not built yet.
+    """
+    try:
+        sid = _session(parent_session_id)
+        if not sid:
+            return None
+        with _LOCK:
+            book = _LEDGER.setdefault(sid, {"turn": "", "seq": 0, "evidence": []})
+            seq_start = book["seq"]
+        new_evidence = engine.subagent_evidence(tool_call_history, seq_start=seq_start, ts=time.time())
+        if not new_evidence:
+            return None
+        with _LOCK:
+            book["seq"] = seq_start + len(new_evidence)
+            book["evidence"].extend(new_evidence)
+            if len(book["evidence"]) > _MAX_EVIDENCE:
+                del book["evidence"][: len(book["evidence"]) - _MAX_EVIDENCE]
+        for ev in new_evidence:
+            if ev.ok:
+                # Same reuse rule as a parent call (item 27 family f): only a successful
+                # child call is worth remembering for a later-turn recap.
+                _append_session_evidence(sid, ev)
+    except Exception:
+        logger.debug("check-please subagent_stop failed", exc_info=True)
+    return None
+
+
 def on_transform_llm_output(response_text: str = "", session_id: Any = None, **kwargs: Any):
     """Return the reply with a check line appended, or None to leave it untouched."""
     try:
@@ -472,6 +509,7 @@ def register(ctx) -> None:
         pass
     ctx.register_hook("pre_llm_call", on_pre_llm_call)
     ctx.register_hook("post_tool_call", on_post_tool_call)
+    ctx.register_hook("subagent_stop", on_subagent_stop)
     ctx.register_hook("transform_llm_output", on_transform_llm_output)
     ctx.register_hook("pre_verify", on_pre_verify)
     ctx.register_command("check", handle_check,

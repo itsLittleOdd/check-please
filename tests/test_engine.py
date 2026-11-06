@@ -306,6 +306,77 @@ class ClassifyCallToolFamilies(unittest.TestCase):
         self.assertEqual(ev("connectors__notion__create_draft", {}).kind, "drafted")
 
 
+def subagent_entry(tool_name, status="ok", targets=None, argument_keys=None):
+    """Exact fixture shape from tools/delegate_tool_results.py's
+    _subagent_stop_tool_call_history (read-only, verified 2026-11-06): {"tool_name",
+    "tool_input": {"argument_keys", "targets"}, "status"}. Never built from a real history."""
+    return {
+        "tool_name": tool_name,
+        "tool_input": {"argument_keys": argument_keys or [], "targets": targets or {}},
+        "status": status,
+        "input_bytes": 0, "output_bytes": 0,
+    }
+
+
+class SubagentClaimCheckClassification(unittest.TestCase):
+    """Backlog item 31 part (a): classify a child's own tool_call_history entries by tool
+    name and sanitized targets only (no raw command text is ever in this shape)."""
+
+    def test_child_send_tool_is_sent_evidence(self):
+        entry = subagent_entry("connectors__gmail__send_email", targets={"to": "dana@example.com"})
+        got = engine.classify_subagent_entry(entry)
+        self.assertEqual(got.kind, "sent")
+        self.assertTrue(got.ok)
+        self.assertTrue(got.via_subagent)
+        self.assertIn("dana@example.com", got.detail)
+
+    def test_child_failed_send_is_not_ok(self):
+        got = engine.classify_subagent_entry(subagent_entry("send_message", status="error"))
+        self.assertEqual(got.kind, "sent")
+        self.assertFalse(got.ok)
+
+    def test_child_write_file_to_code_path_is_saved_code(self):
+        got = engine.classify_subagent_entry(
+            subagent_entry("write_file", targets={"path": "pricing.py"}))
+        self.assertEqual(got.kind, "saved_code")
+        self.assertTrue(got.via_subagent)
+
+    def test_child_cron_create_is_scheduled(self):
+        got = engine.classify_subagent_entry(subagent_entry("cronjob_manage", targets={"action": "create"}))
+        self.assertEqual(got.kind, "scheduled")
+
+    def test_child_readonly_tool_proves_nothing(self):
+        self.assertIsNone(engine.classify_subagent_entry(subagent_entry("connectors__gmail__list_messages")))
+
+    def test_child_terminal_call_has_no_command_text_and_proves_nothing(self):
+        # Honest gap: tool_call_history never carries raw command text, so a terminal call
+        # cannot be scanned by the ladder the way the parent's own calls are.
+        self.assertIsNone(engine.classify_subagent_entry(subagent_entry("terminal", targets={"command": "git push"})))
+
+    def test_delegate_task_itself_proves_nothing(self):
+        self.assertIsNone(engine.classify_subagent_entry(subagent_entry("delegate_task")))
+
+    def test_malformed_entry_is_skipped_not_raised(self):
+        self.assertIsNone(engine.classify_subagent_entry("not a dict"))
+        self.assertIsNone(engine.classify_subagent_entry({}))
+
+    def test_subagent_evidence_filters_and_sequences(self):
+        history = [
+            subagent_entry("connectors__gmail__send_email", targets={"to": "a@b.c"}),
+            subagent_entry("connectors__gmail__list_messages"),  # drops: proves nothing
+            subagent_entry("write_file", status="error", targets={"path": "README.md"}),
+        ]
+        out = engine.subagent_evidence(history, seq_start=5)
+        self.assertEqual([e.kind for e in out], ["sent", "saved"])
+        self.assertTrue(all(e.via_subagent for e in out))
+        self.assertEqual([e.seq for e in out], [6, 7])
+        self.assertFalse(out[1].ok)
+
+    def test_subagent_evidence_handles_non_list_input(self):
+        self.assertEqual(engine.subagent_evidence(None), [])
+        self.assertEqual(engine.subagent_evidence("not a list"), [])
+
+
 class CallSucceededRealResultShapes(unittest.TestCase):
     """call_succeeded against the EXACT post_tool_call result shapes the installed Hermes source
     returns, not guessed ones. Sources (read-only, ~/.hermes/hermes-agent, verified 2026-11-05):

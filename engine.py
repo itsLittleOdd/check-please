@@ -57,6 +57,9 @@ class Evidence:
     stales_tests: bool = True # item 41 part (a): False for a docs/notes-only write, which a
                                # test run could not have read, so it never makes a prior test
                                # pass STALE.
+    via_subagent: bool = False  # item 31: this evidence came from a delegated child's own
+                                 # tool call, replayed into the parent's ledger from
+                                 # subagent_stop's tool_call_history, not the parent's own call.
 
 
 _TEST_CMD = re.compile(
@@ -524,6 +527,84 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
     if _SEND_TOOL.search(tail) or low in {"send_message", "message", "imessage"}:
         return Evidence("sent", ok, name, _target_hint(a), seq, ts, reason)
     return None
+
+
+# Item 31 (subagent claim check), part (a). subagent_stop's tool_call_history is metadata
+# only (see hooks.md "Subagent Lifecycle" and tools/delegate_tool_results.py's
+# _subagent_stop_tool_call_history): each entry is {"tool_name": str, "tool_input":
+# {"argument_keys": [...], "targets": {...}}, "status": "ok"|"error"|"unknown"}. There is no
+# raw command/code text, so a terminal/execute_code child call cannot be scanned by
+# _scan_ladder the way the parent's own calls are (an honest, logged gap, not guessed around).
+# Classification here is tool-name-and-targets only, exactly as the backlog item specifies.
+_NO_EVIDENCE_SUBAGENT_TOOLS = {"terminal", "shell", "bash", "run_command", "execute_command",
+                               "execute_code", "browser_exec"}
+
+
+def classify_subagent_entry(entry: Any) -> Optional[Evidence]:
+    """One tool_call_history row from subagent_stop -> Evidence tagged via_subagent, or None.
+
+    Only tool name and the sanitized targets dict are available (see module note above); a
+    terminal/execute_code call with no dedicated tool name classifies as nothing, same as a
+    read-only or delegate_task call on the parent's own ledger.
+    """
+    if not isinstance(entry, dict):
+        return None
+    name = str(entry.get("tool_name") or "").strip()
+    low = name.lower()
+    if not name or low in _NO_EVIDENCE_SUBAGENT_TOOLS or low in _NO_EVIDENCE_TOOLS:
+        return None
+    status = str(entry.get("status") or "unknown").lower()
+    ok = status == "ok"
+    tool_input = entry.get("tool_input")
+    tool_input = tool_input if isinstance(tool_input, dict) else {}
+    targets = tool_input.get("targets")
+    targets = targets if isinstance(targets, dict) else {}
+    detail = _target_hint(targets) or ", ".join(sorted(str(k) for k in targets)[:3])
+
+    if low in _WRITE_TOOLS:
+        path = str(targets.get("path") or targets.get("file_path") or targets.get("filename") or "")
+        if re.search(r"(^|/)drafts?/|draft", path, _I):
+            kind = "drafted"
+        elif _is_code_path(path):
+            kind = "saved_code"
+        else:
+            kind = "saved"
+        stales = not _is_docs_or_notes_path(path)
+        return Evidence(kind, ok, name, _display_path(path)[:160] or detail, 0, 0.0, "", stales, True)
+
+    if low in {"cronjob", "cron", "schedule", "cronjob_manage"}:
+        return Evidence("scheduled", ok, name, detail, 0, 0.0, "", True, True)
+
+    tail = re.split(r"__|\.", low)[-1]
+    if _DRAFT_TOOL.search(tail):
+        return Evidence("drafted", ok, name, detail, 0, 0.0, "", True, True)
+    if _READONLY_HINT.search(tail):
+        return None
+    if _SEND_TOOL.search(tail) or low in {"send_message", "message", "imessage"}:
+        return Evidence("sent", ok, name, detail, 0, 0.0, "", True, True)
+    return None
+
+
+def subagent_evidence(tool_call_history: Any, seq_start: int = 0, ts: float = 0.0) -> list:
+    """Classify every entry in a subagent_stop's tool_call_history into Evidence, in order.
+
+    Only entries that classify to a ladder kind are returned (same "proves nothing -> None"
+    contract as classify_call); seq is assigned sequentially starting at seq_start so this
+    evidence sorts after whatever the parent turn already logged.
+    """
+    if not isinstance(tool_call_history, list):
+        return []
+    out = []
+    seq = seq_start
+    for entry in tool_call_history:
+        ev = classify_subagent_entry(entry)
+        if ev is None:
+            continue
+        seq += 1
+        ev.seq = seq
+        ev.ts = ts
+        out.append(ev)
+    return out
 
 
 def _target_hint(a: dict) -> str:

@@ -252,6 +252,39 @@ class RealHookHarnessTest(unittest.TestCase):
         self.assertIn("Tests pass", nudge)
         self.assertIn("unresolved claim", nudge)
 
+    def test_subagent_stop_backs_the_parents_relayed_claim(self):
+        """Backlog item 31 part (a): a child's real send, replayed through subagent_stop's
+        tool_call_history (metadata-only shape, see tools/delegate_tool_results.py), should
+        back the PARENT session's own claim about it, even though the parent itself never
+        called send_message."""
+        manager = self.plugins.get_plugin_manager()
+        manager.discover_and_load(force=True)
+        self.assertTrue(manager.has_hook("subagent_stop"),
+                         "check-please did not register subagent_stop through a real discover_and_load")
+        session_id = "sess-real-hook-6"
+
+        manager.invoke_hook("pre_llm_call", session_id=session_id, turn_id="turn-1")
+        # The parent itself only delegated; delegate_task proves nothing on its own ledger.
+        manager.invoke_hook(
+            "post_tool_call", tool_name="delegate_task", args={"tasks": [{"prompt": "email Dana"}]},
+            result={"status": "completed"}, status="success", session_id=session_id,
+        )
+        manager.invoke_hook(
+            "subagent_stop",
+            parent_session_id=session_id, child_session_id="child-1",
+            child_summary="Sent the invoice to Dana.", child_status="succeeded",
+            tool_call_history=[{
+                "tool_name": "connectors__gmail__send_email",
+                "tool_input": {"argument_keys": ["to", "subject"], "targets": {"to": "dana@example.com"}},
+                "status": "ok",
+            }],
+        )
+        results = manager.invoke_hook(
+            "transform_llm_output", response_text="I sent the invoice to Dana.", session_id=session_id,
+        )
+        transformed = next((r for r in results if isinstance(r, str)), "")
+        self.assertIn("1 backed", transformed, "the child's real send did not back the parent's claim")
+
 
 if __name__ == "__main__":
     unittest.main()

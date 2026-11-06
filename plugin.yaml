@@ -11,6 +11,7 @@ author: Whalen Ventures
 provides_hooks:
   - pre_llm_call
   - post_tool_call
+  - subagent_stop
   - transform_llm_output
   - pre_verify
 config_schema:
