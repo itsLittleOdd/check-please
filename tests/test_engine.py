@@ -992,6 +992,58 @@ class SavedCodeVsSavedDocument(unittest.TestCase):
         self.assertEqual(verdicts[0].status, "STALE")
 
 
+class DocsAndNotesDoNotStaleTests(unittest.TestCase):
+    """Item 41 part (a) (Arlo's decision, 2026-11-06 11:27): an edit to a documentation or notes
+    file is not something a test run could have read, so it must never make an earlier passing
+    test run STALE. A code, config or data file edit must still stale it, same as before."""
+
+    def test_readme_edit_after_tests_pass_stays_backed(self):
+        evidence = [
+            ev("terminal", {"command": "pytest -q"}, seq=1),
+            ev("write_file", {"path": "README.md"}, seq=2),
+        ]
+        verdicts = engine.check_turn("Tests pass.", evidence)
+        self.assertEqual(verdicts[0].status, "BACKED")
+
+    def test_code_edit_after_tests_pass_still_stale(self):
+        # The demo: pricing.py is code, not a doc, so this must behave exactly as before.
+        evidence = [
+            ev("terminal", {"command": "pytest -q"}, seq=1),
+            ev("write_file", {"path": "pricing.py"}, seq=2),
+        ]
+        verdicts = engine.check_turn("Tests pass.", evidence)
+        self.assertEqual(verdicts[0].status, "STALE")
+
+    def test_notes_dir_and_report_name_also_do_not_stale(self):
+        for path in ("notes/standup.txt", "docs/overview.md", "reports/weekly.csv",
+                     "HANDOFF.txt", "CLOSEOUT-notes.json", "status_update.yaml"):
+            evidence = [
+                ev("terminal", {"command": "pytest -q"}, seq=1),
+                ev("write_file", {"path": path}, seq=2),
+            ]
+            verdicts = engine.check_turn("Tests pass.", evidence)
+            self.assertEqual(verdicts[0].status, "BACKED", f"{path} should not stale a test claim")
+
+    def test_data_or_config_edit_still_stales(self):
+        # Spec: code, config or data the tests could read must still stale. A .json config file
+        # (not matching any docs/notes name marker) is the config case.
+        evidence = [
+            ev("terminal", {"command": "pytest -q"}, seq=1),
+            ev("write_file", {"path": "config/settings.json"}, seq=2),
+        ]
+        verdicts = engine.check_turn("Tests pass.", evidence)
+        self.assertEqual(verdicts[0].status, "STALE")
+
+    def test_is_docs_or_notes_path_helper(self):
+        self.assertTrue(engine._is_docs_or_notes_path("README.md"))
+        self.assertTrue(engine._is_docs_or_notes_path("CHANGELOG.md"))
+        self.assertTrue(engine._is_docs_or_notes_path("notes/scratch.txt"))
+        self.assertTrue(engine._is_docs_or_notes_path("docs/user-guide/hooks.md"))
+        self.assertFalse(engine._is_docs_or_notes_path("engine.py"))
+        self.assertFalse(engine._is_docs_or_notes_path("config/settings.json"))
+        self.assertFalse(engine._is_docs_or_notes_path(""))
+
+
 class TallyCronJob(unittest.TestCase):
     def test_folds_claims_into_job_row(self):
         tally = {}

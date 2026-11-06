@@ -54,6 +54,9 @@ class Evidence:
     seq: int = 0              # order within the session
     ts: float = 0.0
     reason: str = ""          # item 38 slice 2: why a failed call failed, a few words
+    stales_tests: bool = True # item 41 part (a): False for a docs/notes-only write, which a
+                               # test run could not have read, so it never makes a prior test
+                               # pass STALE.
 
 
 _TEST_CMD = re.compile(
@@ -115,6 +118,30 @@ def _is_code_path(path: str) -> bool:
     for ext in _CODE_EXTENSIONS:
         if low.endswith(ext):
             return True
+    return False
+
+
+# Item 41 part (a): a test run cannot have read a documentation or notes file, so writing one
+# must never make an earlier passing test run STALE. Closed, invented list from Arlo's decision
+# (2026-11-06 11:27): extensions, directories, and filename markers for exactly that shape of
+# file. Deliberately does not touch what KIND of evidence the write still counts as (saved/
+# drafted/saved_code are unchanged); it only flags the write as unable to stale a test claim.
+_DOCS_NOTES_EXTENSIONS = {".md", ".markdown", ".txt", ".rst", ".adoc", ".log"}
+_DOCS_NOTES_DIR = re.compile(r"(^|/)(docs|notes|reports)/", _I)
+_DOCS_NOTES_NAME = re.compile(r"(README|CHANGELOG|NOTES|REPORT|HANDOFF|RESUME|CLOSEOUT|STATUS)", _I)
+
+
+def _is_docs_or_notes_path(path: str) -> bool:
+    if not path:
+        return False
+    low = path.lower().rsplit("?", 1)[0].rsplit("#", 1)[0]
+    for ext in _DOCS_NOTES_EXTENSIONS:
+        if low.endswith(ext):
+            return True
+    if _DOCS_NOTES_DIR.search(path):
+        return True
+    if _DOCS_NOTES_NAME.search(path):
+        return True
     return False
 
 
@@ -478,7 +505,8 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
             kind = "saved_code"
         else:
             kind = "saved"
-        return Evidence(kind, ok, name, _display_path(path)[:160], seq, ts, reason)
+        stales = not _is_docs_or_notes_path(path)
+        return Evidence(kind, ok, name, _display_path(path)[:160], seq, ts, reason, stales_tests=stales)
 
     if low in {"cronjob", "cron", "schedule", "cronjob_manage"}:
         action = str(a.get("action") or "")
@@ -960,7 +988,8 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
         if good:
             proof = good[-1]
             if claim.kind == "tested":
-                later_writes = [e for e in evidence if e.kind in {"saved", "drafted", "saved_code"} and e.ok and e.seq > proof.seq]
+                later_writes = [e for e in evidence if e.kind in {"saved", "drafted", "saved_code"}
+                                 and e.ok and e.seq > proof.seq and e.stales_tests]
                 if later_writes:
                     verdicts.append(Verdict(claim, "STALE", proof, rung,
                                             f"tests passed, then {later_writes[-1].detail or 'a file'} changed with no run since"))
