@@ -538,6 +538,22 @@ _NEGATION = re.compile(
 # at the subject noun (e.g. "invoice has been paid"), which would put "has been" inside the
 # match rather than before it.
 _THIRD_PARTY_PASSIVE = re.compile(r"\b(his|her|their)\b.{0,20}\b(was|were|is|are|has been|have been)\b", _I)
+# Item 27, new family (first direct look at "sent", never attempted before this tick, same
+# shape as the paid/tested direct looks in ticks 15/16): "notified"/"delivered to" in the
+# _CLAIM_PATTERNS "sent" rung match regardless of DIRECTION, so the assistant being the
+# RECIPIENT, not the sender, still reads as a false "sent" claim. Invented examples: "I was
+# notified that the deploy finished.", "We got notified about the outage.", "It was delivered
+# to me this morning." None of these are the assistant sending or delivering anything. Checked
+# on the whole sentence (not the 40-char pre-match window): "notified" sits right in the match,
+# so the passive subject is usually before it, same reason _THIRD_PARTY_PASSIVE is whole-clause.
+# Scoped to "sent" only; does not touch an active "I notified the client" or "I delivered the
+# report to Dana", which still count.
+_RECEIVED_NOT_SENT = re.compile(
+    r"\b(i|we|you)\b[^.!?]{0,20}\b(was|were|am|'m|are|'re|got|has been|have been|'ve been)\s+notified\b|"
+    r"\bnotified\s+(me|us)\b|"
+    r"\bdelivered to (me|us|you)\b",
+    _I,
+)
 # Active-voice third-party subject (item 27 family (b) residual noted 2026-11-05 16:34: "their
 # script pushed the change" was not caught, only the passive shape was). Checked against the
 # 40-char pre-match window (same window _NEGATION already uses), not the whole clause, because
@@ -722,6 +738,8 @@ def extract_claims(reply: str) -> list[Claim]:
             if _OBSERVED_STATE_WINDOW.search(window):
                 continue
             if kind == "paid" and _RECURRING_STATEMENT.search(sent):
+                continue
+            if kind == "sent" and _RECEIVED_NOT_SENT.search(sent):
                 continue
             if kind in _ONE_PER_SENTENCE and (gi, kind) in seen_group:
                 continue

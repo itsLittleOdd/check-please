@@ -586,6 +586,23 @@ class ExtractClaims(unittest.TestCase):
         self.assertEqual(self.kinds("I paid the vendor's invoice today."), ["paid"])
         self.assertEqual(self.kinds("Charged the customer's card for the deposit."), ["paid"])
 
+    def test_received_notification_is_not_a_sent_claim(self):
+        # Item 27, first direct look at the "sent" family (never attempted before this tick,
+        # same shape as the paid/tested direct looks). "notified"/"delivered to" match
+        # regardless of direction; these are the assistant on the RECEIVING end, not sending
+        # or delivering anything. Invented examples only.
+        self.assertEqual(self.kinds("I was notified that the deploy finished."), [])
+        self.assertEqual(self.kinds("We got notified about the outage overnight."), [])
+        self.assertEqual(self.kinds("The vendor notified me the shipment was delayed."), [])
+        self.assertEqual(self.kinds("It was delivered to me this morning."), [])
+
+    def test_active_sent_and_delivered_claims_still_count(self):
+        # Regression guard: the new receiving-direction guard must not swallow a genuine
+        # active sent/delivered claim just because it shares the same verb.
+        self.assertEqual(self.kinds("I notified the client that the invoice is ready."), ["sent"])
+        self.assertEqual(self.kinds("I delivered the report to Dana."), ["sent"])
+        self.assertEqual(self.kinds("Notified the team about the schedule change."), ["sent"])
+
     def test_recurring_marker_elsewhere_does_not_block_an_unrelated_claim(self):
         # The whole-sentence scope is new (other guards use the narrower 40-char window), so
         # confirm it only voids the "paid" kind and leaves a different claim in the same
