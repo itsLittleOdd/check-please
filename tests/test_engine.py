@@ -603,6 +603,26 @@ class ExtractClaims(unittest.TestCase):
         self.assertEqual(self.kinds("I delivered the report to Dana."), ["sent"])
         self.assertEqual(self.kinds("Notified the team about the schedule change."), ["sent"])
 
+    def test_non_deploy_senses_of_released_and_rolled_out_are_not_deployed_claims(self):
+        # Item 27, first direct look at the "deployed" family (never attempted before this
+        # tick; same shape as the prior direct looks at paid/tested/sent). "released" and
+        # "rolled out" in _CLAIM_PATTERNS["deployed"] are bare verbs with no software-deploy
+        # anchor, so ordinary non-software senses false-positived as deploy claims. Invented
+        # examples only.
+        self.assertEqual(self.kinds("The hostages were released this morning."), [])
+        self.assertEqual(self.kinds("The prisoner was released on parole last week."), [])
+        self.assertEqual(self.kinds("I released a statement about the delay."), [])
+        self.assertEqual(self.kinds("The city released the funds for the project."), [])
+        self.assertEqual(self.kinds("She rolled out the red carpet for the guests."), [])
+        self.assertEqual(self.kinds("He rolled out of bed late this morning."), [])
+
+    def test_software_senses_of_released_and_rolled_out_still_count(self):
+        # Regression guard: the non-deploy-sense voids above must not swallow a genuine
+        # software release/rollout claim just because it shares the same bare verb.
+        self.assertEqual(self.kinds("I released version 2.1 to the app store."), ["deployed"])
+        self.assertEqual(self.kinds("Rolled out the new pricing feature to everyone."), ["deployed"])
+        self.assertEqual(self.kinds("The update was released to all users today."), ["deployed"])
+
     def test_recurring_marker_elsewhere_does_not_block_an_unrelated_claim(self):
         # The whole-sentence scope is new (other guards use the narrower 40-char window), so
         # confirm it only voids the "paid" kind and leaves a different claim in the same

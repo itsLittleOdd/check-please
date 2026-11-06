@@ -554,6 +554,22 @@ _RECEIVED_NOT_SENT = re.compile(
     r"\bdelivered to (me|us|you)\b",
     _I,
 )
+# Item 27, first direct look at the "deployed" family (never attempted before this tick, same
+# shape as the prior direct looks at paid/tested/sent). The "deployed" rung's bare "released"/
+# "rolled out" verbs have no software-deploy anchor, so ordinary non-software senses false-
+# positive: a hostage/prisoner/detainee release, a public statement or funds release, or the
+# "rolled out the red carpet"/"rolled out of bed" idioms. Checked on the whole sentence (same
+# reason _RECEIVED_NOT_SENT is whole-sentence): the subject or object that marks the non-deploy
+# sense usually sits right next to the matched verb, not safely inside the 40-char pre-match
+# window. Invented examples only; does not touch "released version 2.1"/"rolled out the
+# feature", which stay active deploy claims.
+_NON_DEPLOY_RELEASE = re.compile(
+    r"\b(hostages?|prisoners?|detainees?|inmates?|captives?|suspects?)\b[^.!?]{0,30}\breleased\b|"
+    r"\breleased\b[^.!?]{0,30}\b(hostages?|prisoners?|detainees?|inmates?|captives?|suspects?|"
+    r"on (bail|parole)|from (custody|jail|prison)|a statement|the funds?|his grip|her grip|their grip)\b|"
+    r"\brolled out\b[^.!?]{0,20}\b(of bed|the red carpet|the welcome mat|the dough)\b",
+    _I,
+)
 # Active-voice third-party subject (item 27 family (b) residual noted 2026-11-05 16:34: "their
 # script pushed the change" was not caught, only the passive shape was). Checked against the
 # 40-char pre-match window (same window _NEGATION already uses), not the whole clause, because
@@ -740,6 +756,8 @@ def extract_claims(reply: str) -> list[Claim]:
             if kind == "paid" and _RECURRING_STATEMENT.search(sent):
                 continue
             if kind == "sent" and _RECEIVED_NOT_SENT.search(sent):
+                continue
+            if kind == "deployed" and _NON_DEPLOY_RELEASE.search(sent):
                 continue
             if kind in _ONE_PER_SENTENCE and (gi, kind) in seen_group:
                 continue
