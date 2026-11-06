@@ -60,6 +60,17 @@ class Evidence:
     via_subagent: bool = False  # item 31: this evidence came from a delegated child's own
                                  # tool call, replayed into the parent's ledger from
                                  # subagent_stop's tool_call_history, not the parent's own call.
+    path: str = ""             # item 43 root-cause fix (1), 17:10: the RAW write target, before
+                               # _display_path's basename collapse for absolute/home paths. detail
+                               # is for display only; _is_proof_file_path must match the real path,
+                               # since an absolute "/abs/x/bin/deploy-upload" collapses to the
+                               # display text "deploy-upload" and loses the "bin/" directory a
+                               # proof-file dir rule needs. Empty for non-write evidence.
+    env_error: bool = False    # item 43 root-cause fix (2), 17:10: True when a failed call's own
+                               # result text looks like an environment problem (command not
+                               # found, a missing Python module, exit code 127), not a real test
+                               # or check failure. _find_edited_proof must never treat this as
+                               # "the earlier failure" a later edit explains away.
 
 
 _TEST_CMD = re.compile(
@@ -205,27 +216,33 @@ def _disclosed_edit(reply: str, path_detail: str) -> bool:
 
 
 def _find_edited_proof(all_evidence: list, backers: list):
-    """Item 43: among *backers* (same-kind evidence for one claim), find the earliest FAILED
-    call followed by a later PASSING call of the same kind, with a successful write to a proof
-    file (per _is_proof_file_path) strictly between them in *all_evidence*'s seq order. Returns
-    (failed_evidence, passing_evidence, proof_write_evidence) or None. Only the FIRST later pass
-    is considered: a second edit-and-rerun after that first real pass is a separate question
-    this tick does not attempt."""
-    failed = [e for e in backers if not e.ok]
+    """Item 43 root-cause fix (2), 17:10: among *backers* (same-kind evidence for one claim),
+    pair the LATEST pass (the one that actually backs the claim check_turn is judging -- the
+    same "latest backer by seq" rule item 42 already uses for the tested kind) with the LATEST
+    real failure before it, then look for a successful proof-file write strictly between those
+    two. Earlier first-fail/first-pass pairing missed the real diagnosed shape: an environment
+    error (missing command/module) fails first, an unrelated real pass follows with no edit at
+    all, and only LATER does a real failure get edited away and re-pass; pairing on the first
+    fail/pass wrongly paired the env-error with the unedited early pass and never looked past it.
+    Real failures only: an env_error-flagged failure (see classify_call) is never treated as "the
+    earlier failure" here, so a chain of env-error -> real pass -> edit -> real fail -> edit ->
+    real pass still finds the real fail/pass pair, not the env-error/early-pass one.
+    Returns (failed_evidence, passing_evidence, proof_write_evidence) or None."""
+    failed = [e for e in backers if not e.ok and not e.env_error]
     passed = [e for e in backers if e.ok]
     if not failed or not passed:
         return None
-    first_fail = min(failed, key=lambda e: e.seq)
-    later_passes = [e for e in passed if e.seq > first_fail.seq]
-    if not later_passes:
+    last_pass = max(passed, key=lambda e: e.seq)
+    earlier_fails = [e for e in failed if e.seq < last_pass.seq]
+    if not earlier_fails:
         return None
-    first_pass = min(later_passes, key=lambda e: e.seq)
+    last_fail = max(earlier_fails, key=lambda e: e.seq)
     writes = [e for e in all_evidence
               if e.kind in {"saved", "saved_code", "drafted"} and e.ok
-              and first_fail.seq < e.seq < first_pass.seq]
+              and last_fail.seq < e.seq < last_pass.seq]
     for w in writes:
-        if _is_proof_file_path(w.detail):
-            return (first_fail, first_pass, w)
+        if _is_proof_file_path(w.path or w.detail):
+            return (last_fail, last_pass, w)
     return None
 
 
@@ -294,6 +311,32 @@ _BARE_FAILED_MARKER = re.compile(r"(?<![A-Za-z0-9])FAILED(?![A-Za-z0-9])")
 _RESULT_FAILURE_TEXT = re.compile(
     r"\btraceback\b|\berror:|\bpermission denied\b|\bcommand not found\b|\bexit code [1-9]|\bno such file\b", _I)
 _HTTP_ERROR_STATUS = re.compile(r"\bhttp/\d(?:\.\d)?\"?\s+([45]\d{2})\b", _I)
+
+# Item 43 root-cause fix (2), 17:10 diagnosis: a failed terminal/code call whose own result
+# text says the environment itself was broken (no interpreter on PATH, a missing Python
+# module, a plain "command not found", or a 127 exit code) never ran the actual check or
+# test at all. _find_edited_proof must not treat that as "the earlier real failure" an edit
+# then explains away; it is noise before the real attempt. Text-only, same over-credit
+# direction as the other evidence-widening regexes in this module (a false env_error=True
+# just makes the loop look one failure further back, never hides a real one entirely, since
+# _find_edited_proof still requires its own real failed call to exist).
+_ENV_ERROR_TEXT = re.compile(
+    r"\bcommand not found\b|\bno module named\b|\bexit code 127\b|\bexited 127\b", _I)
+
+
+def _is_env_error(result: Any) -> bool:
+    data = _as_dict(result)
+    text_blob = _result_text_blob(data) if data else str(result or "")
+    if _ENV_ERROR_TEXT.search(text_blob):
+        return True
+    if data:
+        code = data.get("exit_code", data.get("returncode", data.get("exitCode")))
+        try:
+            if code is not None and int(code) == 127:
+                return True
+        except (TypeError, ValueError):
+            pass
+    return False
 
 _RESULT_TEXT_KEYS = ("output", "stdout", "stderr", "message", "body", "text", "content")
 
@@ -612,6 +655,7 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
         cmd = str(a.get("command") or a.get("cmd") or "")
         short = _shorten_command(cmd)
         kind = _scan_ladder(cmd)
+        env_error = (not ok) and _is_env_error(result)
         if kind is None and ok and _DELETE_OUTPUT.search(str(result or "")):
             kind = "deleted"
         if kind is None and ok:
@@ -622,7 +666,8 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
                 path = targets[0]
                 wkind = "saved_code" if _is_code_path(path) else "saved"
                 stales = not _is_docs_or_notes_path(path)
-                return Evidence(wkind, True, name, _display_path(path)[:160], seq, ts, "", stales_tests=stales)
+                return Evidence(wkind, True, name, _display_path(path)[:160], seq, ts, "",
+                                 stales_tests=stales, path=path)
         if not ok and "&&" in cmd:
             earliest = _earliest_chain_kind(cmd)
             if earliest:
@@ -634,7 +679,7 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
         if not ok and "|" in cmd and "&&" not in cmd and ";" not in cmd and "||" not in cmd \
                 and _single_pipe_kind_is_ambiguous(cmd, kind):
             return None
-        return Evidence(kind, ok, name, short, seq, ts, reason) if kind else None
+        return Evidence(kind, ok, name, short, seq, ts, reason, env_error=env_error) if kind else None
 
     if low in _CODE_TEXT_TOOLS:
         # execute_code runs Python directly; browser_exec runs Python against browser helpers.
@@ -646,7 +691,8 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
         kind = _scan_ladder(code)
         if kind is None and ok and _DELETE_OUTPUT.search(str(result or "")):
             kind = "deleted"
-        return Evidence(kind, ok, name, short, seq, ts, reason) if kind else None
+        return Evidence(kind, ok, name, short, seq, ts, reason,
+                         env_error=(not ok) and _is_env_error(result)) if kind else None
 
     if low in _WRITE_TOOLS:
         path = str(a.get("path") or a.get("file_path") or a.get("filename") or "")
@@ -657,7 +703,8 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
         else:
             kind = "saved"
         stales = not _is_docs_or_notes_path(path)
-        return Evidence(kind, ok, name, _display_path(path)[:160], seq, ts, reason, stales_tests=stales)
+        return Evidence(kind, ok, name, _display_path(path)[:160], seq, ts, reason,
+                         stales_tests=stales, path=path)
 
     if low in {"cronjob", "cron", "schedule", "cronjob_manage"}:
         action = str(a.get("action") or "")
