@@ -474,7 +474,15 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
                   r"queued\b.{0,40}\bfor (today|tomorrow|tonight|next \w+|this \w+)\b|"
                   r"now runs? every (day|week|weekday|weekend|month|hour|\d+)|calendar invite\b)\b"),
     ("deleted", r"\b(deleted|removed (the|it|them|those|these|that)|cleaned up)\b"),
-    ("saved", r"\b(saved|wrote (the|it|a|an|to)|written to|created (the|a|an) (file|draft|doc|document)|"
+    # Item 27, first direct look at "saved" (third-largest real-world flag source after
+    # paid/tested, never checked directly before now; same adjective/noun-use shape already
+    # fixed for paid/scheduled/deployed). Invented examples: "three saved searches", "check your
+    # saved items", "a saved password field". These describe an existing UI feature or a stored
+    # object someone is looking at, not the assistant saving something this turn. Negative
+    # lookahead so a genuine completed save ("saved the file") still counts.
+    ("saved", r"\b(saved(?!\s+(games?|searches?|items?|passwords?|cards?|addresses?|favorites?|"
+              r"bookmarks?|filters?|views?|queries?|templates?|preferences?|settings?|credentials?|"
+              r"logins?|drafts?|carts?|playlists?))|wrote (the|it|a|an|to)|written to|created (the|a|an) (file|draft|doc|document)|"
               r"updated (the )?file|"
               # Item 26(c): update-style save claims (invented examples: "Discount updated.",
               # "Price updated.", "The invoice total has been updated."). A first attempt also

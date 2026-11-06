@@ -1571,5 +1571,41 @@ class PaidCompensationAdjectiveAndRoleNouns(unittest.TestCase):
             "Charged the customer's card for the deposit."))
 
 
+class SavedNounUsesUIFeaturesAndStoredObjects(unittest.TestCase):
+    """Item 27, first direct look at the "saved" kind (third-largest real-world
+    flag source after paid/tested; never checked directly before this tick).
+    Same adjective/noun-use shape already fixed for paid/scheduled/deployed:
+    "saved X" describing an existing UI feature or a stored object someone
+    is looking at is not the assistant saving something this turn. Invented
+    examples only; a genuine completed save must still count."""
+
+    def _kinds(self, text):
+        return [c.kind for c in engine.extract_claims(text)]
+
+    def test_saved_ui_feature_nouns_are_not_claims(self):
+        self.assertNotIn("saved", self._kinds(
+            "You have three saved searches on this account."))
+        self.assertNotIn("saved", self._kinds(
+            "Check your saved items before checkout."))
+        self.assertNotIn("saved", self._kinds(
+            "The saved passwords list has twelve entries."))
+        self.assertNotIn("saved", self._kinds(
+            "Pick a card from your saved cards to pay."))
+        self.assertNotIn("saved", self._kinds(
+            "He cleared all his saved bookmarks last week."))
+        self.assertNotIn("saved", self._kinds(
+            "Her saved playlists sync across every device."))
+
+    def test_genuine_save_claims_still_count(self):
+        self.assertIn("saved", self._kinds(
+            "Saved the file to the project folder."))
+        self.assertIn("saved", self._kinds(
+            "The changes are now saved."))
+        self.assertIn("saved", self._kinds(
+            "I saved a draft of the proposal."))
+        self.assertIn("saved", self._kinds(
+            "Wrote the report and saved it before lunch."))
+
+
 if __name__ == "__main__":
     unittest.main()
