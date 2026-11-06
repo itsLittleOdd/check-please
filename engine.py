@@ -621,6 +621,7 @@ class Claim:
     kind: str          # ladder rung the sentence claims
     text: str          # the sentence (trimmed)
     phrase: str        # the matched words
+    past_scoped: bool = False  # item 42 bug (b): describes an EARLIER run, not the latest one
 
 
 # (rung, pattern). Past tense / completed state only.
@@ -860,6 +861,16 @@ _RECURRING_STATEMENT = re.compile(
     r"\bon the \d+(st|nd|rd|th)? of (every|each)\b",
     _I,
 )
+# Item 42 bug (b): a past-scoped tested claim describes an EARLIER run, not the one judged
+# against current state. Invented examples: "Tests were green pre-change (1/1 passed).",
+# "It passed before the edit.", "The suite was passing earlier.", "Pre-change run: 1/1
+# passed.", "Tests initially passed." Checked on the whole sentence (the marker word can sit
+# before or after the matched claim verb, same reason _RECURRING_STATEMENT is whole-sentence),
+# kind=="tested" only -- this says nothing about whether OTHER kinds' claims can be past-scoped.
+_PAST_SCOPE_TESTED = re.compile(
+    r"\bpre-?change\b|\bbefore the (change|edit)\b|\bearlier\b|\binitially\b",
+    _I,
+)
 _QUESTION = re.compile(r"\?\s*$")
 _CODE_FENCE = re.compile(r"```.*?```", re.S)
 _INLINE_CODE = re.compile(r"`[^`\n]*`")
@@ -1016,7 +1027,8 @@ def extract_claims(reply: str) -> list[Claim]:
             seen_group.add((gi, kind))
             seen_kind_reply.add(kind)
             seen_text.add(text_key)
-            claims.append(Claim(kind, sent[:200], m.group(0)))
+            past_scoped = kind == "tested" and bool(_PAST_SCOPE_TESTED.search(sent))
+            claims.append(Claim(kind, sent[:200], m.group(0), past_scoped))
             break  # one claim per sentence: the highest-stakes rung listed first
     return claims
 
@@ -1066,6 +1078,22 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
         rung = _highest_rung(evidence, _family_kinds(claim.kind))
         backers = [e for e in evidence if e.kind in _BACKS.get(claim.kind, set())]
         if claim.kind == "tested" and backers:
+            if claim.past_scoped:
+                # Item 42 bug (b): a past-scoped claim ("were green pre-change") describes an
+                # EARLIER run, not the latest one. Back it with the EARLIEST passing run this
+                # turn, never judge it against whatever ran most recently, and never STALE it
+                # (a later edit cannot retroactively un-happen an earlier real pass).
+                passes = [e for e in backers if e.ok]
+                if passes:
+                    earliest = min(passes, key=lambda e: e.seq)
+                    verdicts.append(Verdict(claim, "BACKED", earliest, rung,
+                                            "backed by an earlier run, before the change"))
+                else:
+                    latest = max(backers, key=lambda e: e.seq)
+                    reason = latest.reason or _GENERIC_FAILURE_REASON
+                    note = reason if reason == _GENERIC_FAILURE_REASON else f"{claim.kind} call {reason}"
+                    verdicts.append(Verdict(claim, "FAILED", latest, rung, note))
+                continue
             # Item 42 bug (a): a present-tense tested claim ("Tests pass.") must be judged
             # against the LATEST test run this turn (by seq), pass or fail, not the latest
             # PASSING one. Picking only the latest ok=True run let an earlier pass outrank a

@@ -968,6 +968,80 @@ class TestedJudgedAgainstLatestRun(unittest.TestCase):
         self.assertEqual(v[0].status, "BACKED")
 
 
+class PastScopedTestedClaims(unittest.TestCase):
+    """Item 42 bug (b): a past-scoped tested claim ("were green pre-change", "passed
+    before the edit", "was passing earlier", "initially passed") describes an EARLIER run
+    and is backed by the EARLIEST matching pass, never judged against (or made STALE by)
+    whatever ran most recently."""
+
+    def test_extract_claims_flags_past_scoped(self):
+        claims = engine.extract_claims("Tests were green pre-change (1/1 passed).")
+        self.assertEqual(len(claims), 1)
+        self.assertEqual(claims[0].kind, "tested")
+        self.assertTrue(claims[0].past_scoped)
+
+    def test_extract_claims_present_tense_is_not_past_scoped(self):
+        claims = engine.extract_claims("Tests pass.")
+        self.assertEqual(len(claims), 1)
+        self.assertFalse(claims[0].past_scoped)
+
+    def test_before_the_edit_phrasing_is_past_scoped(self):
+        claims = engine.extract_claims("Tests passed before the edit.")
+        self.assertTrue(claims[0].past_scoped)
+
+    def test_was_passing_earlier_is_past_scoped(self):
+        claims = engine.extract_claims("The suite passed earlier.")
+        self.assertTrue(claims[0].past_scoped)
+
+    def test_initially_passed_is_past_scoped(self):
+        claims = engine.extract_claims("Tests passed initially.")
+        self.assertTrue(claims[0].past_scoped)
+
+    def test_earliest_pass_backs_a_past_scoped_claim_even_after_a_later_fail(self):
+        evidence = [
+            ev("terminal", {"command": "pytest -q"}, seq=1),                                  # pass
+            ev("write_file", {"path": "pricing.py"}, seq=2),                                   # edit
+            ev("terminal", {"command": "pytest -q"}, {"exit_code": 1, "output": "1 failed"}, seq=3),  # fail
+        ]
+        v = engine.check_turn("Tests were green pre-change (1/1 passed).", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+        self.assertEqual(v[0].proof.seq, 1)
+
+    def test_past_scoped_claim_never_reads_stale(self):
+        """Even with an edit and no rerun after the one earlier pass, a past-scoped claim
+        is backed by that earlier pass, not STALE (a later edit cannot un-happen it)."""
+        evidence = [
+            ev("terminal", {"command": "pytest -q"}, seq=1),
+            ev("write_file", {"path": "pricing.py"}, seq=2),
+        ]
+        v = engine.check_turn("Tests passed before the edit.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+
+    def test_past_scoped_claim_with_no_passing_run_at_all_reads_failed_not_stale(self):
+        evidence = [
+            ev("terminal", {"command": "pytest -q"}, {"exit_code": 1, "output": "1 failed"}, seq=1),
+        ]
+        v = engine.check_turn("Tests passed initially.", evidence)
+        self.assertEqual(v[0].status, "FAILED")
+
+    def test_full_lab_draft_mixing_past_scope_and_present_failure_is_not_inline_worthy(self):
+        """Item 42's must-pass test: the real lab sequence (tests OK, edit pricing.py, write
+        an invoice draft, rerun FAILED) with an honest draft reply that scopes the pass to
+        before the change and admits the current failure must raise no inline-worthy verdict,
+        so pre_verify's catch_before_send_directive returns None."""
+        evidence = [
+            ev("terminal", {"command": "pytest -q"}, seq=1),
+            ev("write_file", {"path": "pricing.py"}, seq=2),
+            ev("write_file", {"path": "drafts/invoice-dana.md"}, seq=3),
+            ev("terminal", {"command": "pytest -q"}, {"exit_code": 1, "output": "1 failed"}, seq=4),
+        ]
+        draft = ("Tests were green pre-change (1/1 passed); discount is now 15%; "
+                 "test_pricing.py now fails (got 85.0), so it needs updating before merge.")
+        v = engine.check_turn(draft, evidence)
+        self.assertFalse(any(engine.inline_worthy(verdict) for verdict in v))
+        self.assertIsNone(engine.catch_before_send_directive(v))
+
+
 class LadderFamilyScoping(unittest.TestCase):
     """Discovered item 18: proven_rung must be scoped to the claimed item's own ladder
     family, never the turn's single globally-highest evidence kind."""
