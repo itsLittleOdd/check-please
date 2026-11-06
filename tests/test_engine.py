@@ -1321,5 +1321,36 @@ class PaidNounUsesMarketingAndOps(unittest.TestCase):
             "The balance has been paid in full."))
 
 
+class TestedBareNoErrorsNoComplaintsAreNotClaims(unittest.TestCase):
+    """Item 27 tick 16: bare "no errors" and "no complaints" were ungated (the
+    "( came up| found)?" and "( from (the )?linter)?" suffixes were optional),
+    so a casual remark about a plan, a document, or a person's behavior with
+    no connection to running code ("no errors in your reasoning", "no
+    complaints from the neighbors") read as a tested claim. The suffix is
+    now required. Invented examples only; the two existing corpus rows
+    (ids 153, 155) already used the suffix form and are unaffected."""
+
+    def _kinds(self, text):
+        return [c.kind for c in engine.extract_claims(text)]
+
+    def test_bare_no_errors_about_non_code_subject_is_not_a_claim(self):
+        self.assertNotIn("tested", self._kinds(
+            "No errors in your reasoning, the plan looks sound."))
+        self.assertNotIn("tested", self._kinds(
+            "No errors in the spreadsheet formulas that I can see."))
+
+    def test_bare_no_complaints_about_a_non_linter_subject_is_not_a_claim(self):
+        self.assertNotIn("tested", self._kinds(
+            "No complaints so far from the pilot group."))
+        self.assertNotIn("tested", self._kinds(
+            "No complaints from the neighbors about the noise."))
+
+    def test_no_errors_and_no_complaints_still_count_with_the_original_suffix(self):
+        self.assertIn("tested", self._kinds(
+            "No errors came up when I ran the build."))
+        self.assertIn("tested", self._kinds(
+            "No complaints from the linter on this pass."))
+
+
 if __name__ == "__main__":
     unittest.main()

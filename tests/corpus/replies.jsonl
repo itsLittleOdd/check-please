@@ -213,3 +213,9 @@
 {"text": "Charged the client's card for the deposit.", "expected": ["paid"], "category": "invoices", "id": 214}
 {"text": "Paid the contractor's invoice this morning.", "expected": ["paid"], "category": "invoices", "id": 215}
 {"text": "The balance has been paid in full.", "expected": ["paid"], "category": "invoices", "id": 216}
+{"text": "No errors in your reasoning, the plan looks sound.", "expected": [], "category": "ops", "id": 217}
+{"text": "No errors in the spreadsheet formulas that I can see.", "expected": [], "category": "ops", "id": 218}
+{"text": "No complaints so far from the pilot group.", "expected": [], "category": "ops", "id": 219}
+{"text": "No complaints from the neighbors about the noise.", "expected": [], "category": "ops", "id": 220}
+{"text": "No errors came up when I ran the build.", "expected": ["tested"], "category": "coding", "id": 221}
+{"text": "No complaints from the linter on this pass.", "expected": ["tested"], "category": "coding", "id": 222}
