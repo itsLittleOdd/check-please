@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any
+from typing import Any, Optional
 
 from . import engine
 
@@ -283,16 +283,31 @@ def _save_cross_record(sid: str, rec: dict) -> None:
         _save_cross(data)
 
 
-def on_pre_llm_call(session_id: Any = None, turn_id: Any = None, **kwargs: Any) -> None:
+def on_pre_llm_call(session_id: Any = None, turn_id: Any = None, **kwargs: Any) -> Any:
+    """Starts a fresh evidence ledger for this turn, plus the backlog item 30 next_turn_nudge
+    fallback: pre_verify (on_pre_verify) only runs its catch_before_send check on coding turns,
+    so a STALE/FAILED claim in a non-coding reply reaches the user with nothing to catch it that
+    same turn. This looks at the PREVIOUS turn's already-delivered verdicts (_LAST, set by
+    on_transform_llm_output after the reply went out) one turn late and, if any were
+    inline-worthy, returns a plain string for pre_llm_call's context-injection contract (hooks.md:
+    pre_llm_call may return a string to inject ephemeral context into the current user message).
+    Off entirely when next_turn_nudge is disabled; never raises."""
+    nudge: Optional[str] = None
     try:
         sid = _session(session_id)
+        if bool(_settings.get("next_turn_nudge", True)):
+            with _LOCK:
+                prev_verdicts = list(_LAST.get(sid, []))
+            inline_unbacked = bool(_settings.get("inline_unbacked", False))
+            nudge = engine.next_turn_nudge_context(prev_verdicts, inline_unbacked)
         _reset_turn(sid, turn_id)
         rec = _cross_record(sid)
         rec["turn_num"] += 1
         _save_cross_record(sid, rec)
     except Exception:  # never break a turn
         logger.debug("check-please pre_llm_call failed", exc_info=True)
-    return None
+        return None
+    return nudge
 
 
 def on_post_tool_call(tool_name: str = "", args: Any = None, result: Any = None, session_id: Any = None,
@@ -445,6 +460,10 @@ def register(ctx) -> None:
         pass
     try:
         _settings["catch_before_send"] = ctx.get_config("catch_before_send", default=True)
+    except Exception:
+        pass
+    try:
+        _settings["next_turn_nudge"] = ctx.get_config("next_turn_nudge", default=True)
     except Exception:
         pass
     try:

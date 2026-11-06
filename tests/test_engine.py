@@ -1516,6 +1516,47 @@ class CatchBeforeSendDirective(unittest.TestCase):
         self.assertIsNone(engine.catch_before_send_directive(verdicts))
 
 
+class NextTurnNudgeContext(unittest.TestCase):
+    """Backlog item 30, next_turn_nudge fallback: pre_llm_call's one-turn-late catch for a
+    STALE/FAILED claim that reached the user because pre_verify's own catch_before_send never
+    ran (a non-coding turn, or the one-shot retry didn't fix it)."""
+
+    def test_none_when_previous_reply_had_no_verdicts(self):
+        self.assertIsNone(engine.next_turn_nudge_context([]))
+
+    def test_none_when_nothing_inline_worthy(self):
+        verdicts = engine.check_turn("Sent the invoice to Dana.", [])  # NOT_BACKED only
+        self.assertIsNone(engine.next_turn_nudge_context(verdicts))
+
+    def test_names_a_stale_claim_from_the_previous_reply(self):
+        verdicts = engine.check_turn("Tests pass.", [
+            ev("terminal", {"command": "pytest -q"}, seq=1),
+            ev("write_file", {"path": "pricing.py"}, seq=2),
+        ])
+        context = engine.next_turn_nudge_context(verdicts)
+        self.assertIn("Tests pass", context)
+        self.assertIn("1 unresolved claim", context)
+
+    def test_names_a_failed_claim_from_the_previous_reply(self):
+        verdicts = engine.check_turn("Deployed to prod.", [
+            ev("terminal", {"command": "vercel deploy --prod"}, result={"exit_code": 1}, seq=1),
+        ])
+        context = engine.next_turn_nudge_context(verdicts)
+        self.assertIn("Deployed to prod", context)
+
+    def test_not_backed_alone_is_silent_by_default(self):
+        """Item 41 receipts framing: a plain not-backed claim is not a contradiction and never
+        triggers the nudge by default, same bar as catch_before_send_directive."""
+        verdicts = engine.check_turn("Paid the vendor invoice.", [])
+        self.assertIsNone(engine.next_turn_nudge_context(verdicts))
+
+    def test_inline_unbacked_setting_restores_high_stakes_not_backed(self):
+        verdicts = engine.check_turn("Paid the vendor invoice.", [])
+        self.assertIsNone(engine.next_turn_nudge_context(verdicts, inline_unbacked=False))
+        context = engine.next_turn_nudge_context(verdicts, inline_unbacked=True)
+        self.assertIn("Paid the vendor invoice", context)
+
+
 class ClaimsPayloadSerialization(unittest.TestCase):
     """Backlog item 11: the exact JSON shape persisted to ctx.state and served by
     dashboard/plugin_api.py's GET /claims route for the Desktop pane."""

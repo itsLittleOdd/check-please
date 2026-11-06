@@ -223,6 +223,35 @@ class RealHookHarnessTest(unittest.TestCase):
         self.assertIn("Tests pass", directive["message"])
         self.assertIn("rerun", directive["message"].lower())
 
+    def test_pre_llm_call_nudges_about_a_stale_claim_that_reached_the_user_last_turn(self):
+        """Backlog item 30, next_turn_nudge fallback: a same-turn STALE claim slipped through
+        transform_llm_output (no pre_verify catch happened, simulating a non-coding turn where
+        pre_verify never fires). The NEXT turn's pre_llm_call should return a plain context
+        string naming it, dispatched through the real PluginManager."""
+        manager = self.plugins.get_plugin_manager()
+        manager.discover_and_load(force=True)
+        session_id = "sess-real-hook-5"
+
+        manager.invoke_hook("pre_llm_call", session_id=session_id, turn_id="turn-1")
+        manager.invoke_hook(
+            "post_tool_call", tool_name="terminal", args={"command": "pytest -q"},
+            result={"exit_code": 0, "output": "OK"}, status="success", session_id=session_id,
+        )
+        manager.invoke_hook(
+            "post_tool_call", tool_name="write_file", args={"path": "pricing.py"},
+            result={"error": None}, status="success", session_id=session_id,
+        )
+        delivered = manager.invoke_hook(
+            "transform_llm_output", response_text="Tests pass.", session_id=session_id,
+        )
+        final_text = next((r for r in delivered if isinstance(r, str)), "")
+        self.assertIn("1 stale", final_text, "setup did not reach the user as a stale claim")
+
+        results = manager.invoke_hook("pre_llm_call", session_id=session_id, turn_id="turn-2")
+        nudge = next((r for r in results if isinstance(r, str) and r), "")
+        self.assertIn("Tests pass", nudge)
+        self.assertIn("unresolved claim", nudge)
+
 
 if __name__ == "__main__":
     unittest.main()

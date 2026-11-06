@@ -1237,6 +1237,30 @@ def catch_before_send_directive(verdicts: list[Verdict]) -> Optional[dict]:
     return {"action": "continue", "message": " ".join(sentences)}
 
 
+def next_turn_nudge_context(verdicts: list[Verdict], inline_unbacked: bool = False) -> Optional[str]:
+    """Backlog item 30, next_turn_nudge fallback: pre_verify only fires on turns that edited
+    code (hooks.md), so a STALE or FAILED claim in a non-coding reply never gets a
+    catch_before_send chance and can reach the user untouched. This covers that gap one turn
+    late: pre_llm_call checks the PREVIOUS turn's already-delivered verdicts and, if any were
+    inline-worthy, returns one plain-text context line for the agent's next turn so it can
+    correct itself if the user is still relying on that claim. Same inline_worthy bar as the
+    Check line (item 41 receipts framing), not a separate kind list. Returns None when nothing
+    inline-worthy was in the previous reply."""
+    flagged = [v for v in verdicts if inline_worthy(v, inline_unbacked)]
+    if not flagged:
+        return None
+    bits = []
+    for v in flagged:
+        quoted = v.claim.text.strip()
+        if len(quoted) > 100:
+            quoted = quoted[:97] + "..."
+        bits.append(f'"{quoted}" ({v.note})')
+    plural = "s" if len(bits) > 1 else ""
+    return (f"Check, Please: your last reply had {len(bits)} unresolved claim{plural} with no "
+            f"current evidence: {'; '.join(bits)}. If the user is relying on it, confirm it is "
+            "still true or correct it.")
+
+
 # Kinds the optional 'inline_unbacked' setting (default off) restores to the reply line for
 # users who want the old higher-stakes-kinds-inline behavior back (item 41 part b).
 _INLINE_NOT_BACKED_KINDS = {"sent", "paid", "deployed", "pushed", "deleted", "scheduled"}
