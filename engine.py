@@ -838,6 +838,32 @@ def apply_cross_turn_stale(verdicts: list[Verdict], edited_since_pass: bool, not
     return out
 
 
+def apply_session_evidence(verdicts: list[Verdict], session_evidence: list[Evidence]) -> list[Verdict]:
+    """Item 27 family (f), session recaps: a reply that recaps work actually done in an earlier
+    turn of the same session should not read as an overclaim just because this turn's own
+    ledger (reset every turn by on_pre_llm_call) is empty. Only NOT_BACKED verdicts are touched;
+    a claim already BACKED, FAILED, or upgraded to STALE (by this function or by
+    apply_cross_turn_stale, which should run first) is left untouched.
+
+    Honest limit: this backs on claim kind alone, the same simplification check_turn already
+    uses for this-turn evidence. It does not compare targets (person, branch, file) across
+    turns, so a claim naming a different target than the earlier evidence proved can still read
+    as falsely BACKED here (item 39, target matching, is the fix for that gap, not this one)."""
+    out: list[Verdict] = []
+    for v in verdicts:
+        if v.status != "NOT_BACKED":
+            out.append(v)
+            continue
+        backers = [e for e in session_evidence if e.ok and e.kind in _BACKS.get(v.claim.kind, set())]
+        if not backers:
+            out.append(v)
+            continue
+        proof = backers[-1]
+        rung = _highest_rung(session_evidence, _family_kinds(v.claim.kind))
+        out.append(Verdict(v.claim, "BACKED", proof, rung, "earlier this session"))
+    return out
+
+
 def verdict_to_dict(v: Verdict) -> dict:
     """One verdict as a JSON-safe plain dict (backlog item 11 data path: the Desktop pane and
     any plugin_api.py backend route read this shape, never a Verdict/Claim object directly)."""

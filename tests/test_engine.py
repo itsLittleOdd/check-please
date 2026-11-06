@@ -958,13 +958,20 @@ class PluginHooks(unittest.TestCase):
         self.assertIn("Check: 1 not backed", out)
         self.assertIn("NOT BACKED", m.handle_check("", session_id="s1"))
 
-    def test_turn_reset(self):
+    def test_turn_reset_but_session_evidence_still_backs_a_recap(self):
+        """_reset_turn clears the per-turn ledger every turn (so stale evidence from turn 1
+        never counts as fresh proof for turn 2's claim); item 27 family (f) means the SESSION
+        store still remembers it, so a recap of the same real action in a later turn reads
+        BACKED with the 'earlier this session' note, not as a fresh overclaim."""
         m = self.mod
         m.on_pre_llm_call(session_id="s2", turn_id="t1")
         m.on_post_tool_call(tool_name="send_message", args={"to": "x"}, result={"ok": True}, session_id="s2")
         m.on_pre_llm_call(session_id="s2", turn_id="t2")
         out = m.on_transform_llm_output(response_text="Sent it.", session_id="s2")
-        self.assertIn("not backed", out)
+        self.assertIn("1 backed", out)
+        self.assertNotIn("not backed", out)
+        detail = m.handle_check("", session_id="s2")
+        self.assertIn("earlier this session", detail)
 
     def test_hooks_never_raise(self):
         m = self.mod
@@ -992,7 +999,7 @@ class PluginHooks(unittest.TestCase):
         self.assertIn("1 stale", out3)
         self.assertNotIn("not backed", out3)
 
-    def test_cross_turn_stale_does_not_fire_when_no_edit_happened_since_the_pass(self):
+    def test_no_edit_since_the_pass_is_backed_by_session_evidence_not_fresh_stale(self):
         m = self.mod
         sid = "s-cross-turn-clean"
         m.on_pre_llm_call(session_id=sid, turn_id="t1")
@@ -1002,10 +1009,13 @@ class PluginHooks(unittest.TestCase):
 
         m.on_pre_llm_call(session_id=sid, turn_id="t2")
         out2 = m.on_transform_llm_output(response_text="Tests pass still.", session_id=sid)
-        # No edit happened between turn 1 and turn 2, so this is a plain unbacked claim,
-        # not a stale one: nothing to be stale about.
-        self.assertIn("1 not backed", out2)
+        # No edit happened between turn 1 and turn 2, so this is not stale (apply_cross_turn_stale
+        # only fires on edited_after_pass). Item 27 family (f): the claim is still true, backed
+        # by turn 1's real pass recorded in session-wide evidence, so it reads BACKED, not as
+        # an overclaim just because turn 2's own ledger is empty.
+        self.assertIn("1 backed", out2)
         self.assertNotIn("stale", out2)
+        self.assertNotIn("not backed", out2)
 
     def test_cron_tally_tags_reply_with_job_and_updates_per_job_counts(self):
         """Backlog item 7: when ctx.current_cron_execution() returns a run, the turn's claims
@@ -1362,6 +1372,50 @@ class MustPassRegressionLabRun(unittest.TestCase):
         reply = "Invoice drafted for Dana (not emailed \u2014 no send capability was used)."
         claims = engine.extract_claims(reply)
         self.assertNotIn("sent", [c.kind for c in claims])
+
+
+class SessionRecapEvidence(unittest.TestCase):
+    """Item 27 family (f), session recaps: a reply that recaps earlier-turn work (this turn's
+    own ledger is empty, by design -- on_pre_llm_call resets it every turn) should be backed by
+    session-wide evidence, not read as an overclaim. apply_session_evidence is the pure function
+    the plugin wires in after apply_cross_turn_stale; __init__.py's own multi-turn hook tests
+    prove the real wiring end to end."""
+
+    def test_earlier_turn_evidence_backs_a_not_backed_claim(self):
+        verdicts = engine.check_turn("I already sent the invoice to Dana.", [])
+        self.assertEqual(verdicts[0].status, "NOT_BACKED")
+        session_evidence = [ev("send_message", {"to": "dana@example.com"}, seq=1)]
+        out = engine.apply_session_evidence(verdicts, session_evidence)
+        self.assertEqual(out[0].status, "BACKED")
+        self.assertEqual(out[0].note, "earlier this session")
+        self.assertIs(out[0].proof, session_evidence[0])
+
+    def test_no_session_evidence_leaves_not_backed_claim_untouched(self):
+        verdicts = engine.check_turn("Invoice emailed to Dana.", [])
+        out = engine.apply_session_evidence(verdicts, [])
+        self.assertEqual(out[0].status, "NOT_BACKED")
+        self.assertEqual(out[0].note, verdicts[0].note)
+
+    def test_backed_failed_and_stale_verdicts_are_never_overridden(self):
+        backed_now = engine.check_turn("Tests pass.", [ev("terminal", {"command": "pytest -q"}, seq=1)])
+        self.assertEqual(backed_now[0].status, "BACKED")
+        unrelated_session_evidence = [ev("send_message", {"to": "x"}, seq=1)]
+        out = engine.apply_session_evidence(backed_now, unrelated_session_evidence)
+        self.assertEqual(out[0].status, "BACKED")
+        self.assertEqual(out[0].note, "")  # not overwritten with the session-recap note
+
+        failed_now = engine.check_turn("Deployed it.",
+                                        [ev("terminal", {"command": "vercel deploy --prod"},
+                                            result={"exit_code": 1}, seq=1)])
+        self.assertEqual(failed_now[0].status, "FAILED")
+        out2 = engine.apply_session_evidence(failed_now, unrelated_session_evidence)
+        self.assertEqual(out2[0].status, "FAILED")
+
+        stale_now = engine.apply_cross_turn_stale(
+            engine.check_turn("Tests pass.", []), edited_since_pass=True)
+        self.assertEqual(stale_now[0].status, "STALE")
+        out3 = engine.apply_session_evidence(stale_now, [ev("terminal", {"command": "pytest -q"}, seq=1)])
+        self.assertEqual(out3[0].status, "STALE")  # a known-stale claim is never re-backed
 
 
 class PaidNounUsesMarketingAndOps(unittest.TestCase):

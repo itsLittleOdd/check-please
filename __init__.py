@@ -60,6 +60,14 @@ _MAX_DAYS = 14
 # itself reads; this is the durable, cross-process-readable twin of the same data.
 _LAST_REPLY_MEM: dict[str, dict] = {}
 
+# Session-wide evidence (item 27 family (f), session recaps): unlike _LEDGER (reset every turn
+# by _reset_turn), this accumulates across the whole session so a reply recapping earlier-turn
+# work (e.g. "I already sent that invoice.") can be backed by evidence from a prior turn, not
+# just this one. Same ctx.state-with-in-memory-fallback pattern as the other records above,
+# capped per session (oldest evidence dropped first) and across sessions (_MAX_SESSIONS).
+_SESSION_EVIDENCE_MEM: dict[str, list[dict]] = {}
+_MAX_SESSION_EVIDENCE = 200
+
 
 def _session(sid: Any) -> str:
     return str(sid or "")
@@ -176,6 +184,62 @@ def _reset_turn(sid: str, turn: Any = None) -> None:
                 _LEDGER.pop(old, None)
 
 
+def _evidence_to_dict(ev: Any) -> dict:
+    return {"kind": ev.kind, "ok": ev.ok, "tool": ev.tool, "detail": ev.detail, "seq": ev.seq, "ts": ev.ts}
+
+
+def _evidence_from_dict(d: dict) -> Any:
+    return engine.Evidence(kind=str(d.get("kind", "")), ok=bool(d.get("ok")), tool=str(d.get("tool", "")),
+                            detail=str(d.get("detail", "")), seq=int(d.get("seq", 0) or 0),
+                            ts=float(d.get("ts", 0.0) or 0.0))
+
+
+def _load_session_evidence(sid: str) -> list:
+    """All evidence recorded for this session across every turn so far (item 27 family (f)).
+    Never raises; falls back to the in-memory store with no ctx."""
+    ctx = _ctx_box.get("ctx")
+    data: dict = {}
+    if ctx is not None:
+        try:
+            data = dict(ctx.state.get("session_evidence", default={}) or {})
+        except Exception:
+            logger.debug("check-please session evidence read failed", exc_info=True)
+            data = dict(_SESSION_EVIDENCE_MEM)
+    else:
+        data = dict(_SESSION_EVIDENCE_MEM)
+    return [_evidence_from_dict(row) for row in data.get(sid, [])]
+
+
+def _append_session_evidence(sid: str, ev: Any) -> None:
+    with _LOCK:
+        ctx = _ctx_box.get("ctx")
+        if ctx is not None:
+            try:
+                data = dict(ctx.state.get("session_evidence", default={}) or {})
+            except Exception:
+                logger.debug("check-please session evidence read failed", exc_info=True)
+                data = dict(_SESSION_EVIDENCE_MEM)
+        else:
+            data = dict(_SESSION_EVIDENCE_MEM)
+        rows = list(data.get(sid, []))
+        rows.append(_evidence_to_dict(ev))
+        if len(rows) > _MAX_SESSION_EVIDENCE:
+            del rows[: len(rows) - _MAX_SESSION_EVIDENCE]
+        data[sid] = rows
+        if len(data) > _MAX_SESSIONS:
+            for old in list(data)[: len(data) - _MAX_SESSIONS]:
+                if old != sid:
+                    data.pop(old, None)
+        if ctx is not None:
+            try:
+                ctx.state.set("session_evidence", data)
+                return
+            except Exception:
+                logger.debug("check-please session evidence write failed", exc_info=True)
+        _SESSION_EVIDENCE_MEM.clear()
+        _SESSION_EVIDENCE_MEM.update(data)
+
+
 def _load_cross() -> dict:
     ctx = _ctx_box.get("ctx")
     if ctx is not None:
@@ -246,6 +310,10 @@ def on_post_tool_call(tool_name: str = "", args: Any = None, result: Any = None,
             book["evidence"].append(ev)
             if len(book["evidence"]) > _MAX_EVIDENCE:
                 del book["evidence"][: len(book["evidence"]) - _MAX_EVIDENCE]
+        if ev.ok:
+            # Item 27 family (f): only a successful call is worth remembering across turns;
+            # a failed one has nothing to back a later recap with.
+            _append_session_evidence(sid, ev)
         if ev.ok and ev.kind == "tested":
             rec = _cross_record(sid)
             rec["last_pass_turn"] = rec["turn_num"]
@@ -275,6 +343,11 @@ def on_transform_llm_output(response_text: str = "", session_id: Any = None, **k
             note = (f"tests passed in turn {rec['last_pass_turn']} ({rec['pass_detail']}), "
                     "code changed since, no rerun this turn")
             verdicts = engine.apply_cross_turn_stale(verdicts, True, note)
+        # Item 27 family (f): a reply recapping work actually done in an earlier turn of this
+        # same session should not read as an overclaim just because this turn's own ledger is
+        # empty. Runs after the cross-turn STALE upgrade above so a known stale "tests pass"
+        # claim is never masked as freshly backed by an old pass.
+        verdicts = engine.apply_session_evidence(verdicts, _load_session_evidence(sid))
         run = _current_cron()
         if run is not None and verdicts:
             with _LOCK:
