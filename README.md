@@ -72,9 +72,23 @@ hermes plugins install check-please
 
 `verify_nudge`: on by default. On coding turns, asks the agent to rerun tests before finishing when tests last passed before a later edit with no rerun since.
 
+`catch_before_send`: on by default. See "Catch before send" below.
+
+`next_turn_nudge`: on by default. See "Catch before send" below.
+
+## Catch before send
+
+Two settings work together to stop a stale or failed claim before it reaches you, instead of only reporting it after the fact.
+
+`catch_before_send` (default on) runs on coding turns, right before the agent finishes. It checks the agent's own draft reply against this turn's evidence; if the draft still claims something this turn's evidence contradicts or does not prove (for example "Tests pass" right after an edit with no rerun), the agent gets sent back once, by name, before you ever see the reply.
+
+`catch_before_send` only fires on turns that edited code, because that is the only turn Hermes' `pre_verify` hook runs on. `next_turn_nudge` (default on) covers the gap: on the next turn, whatever kind it is, if the previous reply had a stale or failed claim that reached you untouched, the agent gets one line of context about it, so it can correct itself if you are still relying on that claim.
+
+Both only fire on stale or failed claims (an active contradiction), never a plain not-backed claim, matching the Check line's own receipts framing above.
+
 ## What it touches
 
-- Hooks: `pre_llm_call`, `post_tool_call` (observe only) and `transform_llm_output` (appends one line; streaming stays on).
+- Hooks: `post_tool_call` (observe only); `pre_llm_call` (observe, plus an optional one-line context nudge, see "Catch before send"); `transform_llm_output` (appends one line; streaming stays on); `pre_verify` (observe, plus an optional continue directive, see "Catch before send").
 - No network calls, no model calls, no shell commands, no credentials, no background processes, no telemetry.
 - Keeps the current turn's tool evidence in memory only.
 - Never blocks, approves or edits a tool call.
