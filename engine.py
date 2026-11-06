@@ -1212,6 +1212,31 @@ def verify_nudge_directive(edited_after_pass: bool, last_pass_turn: Optional[int
     }
 
 
+def catch_before_send_directive(verdicts: list[Verdict]) -> Optional[dict]:
+    """Backlog item 30: a pre_verify continue directive naming every inline-worthy claim in
+    this turn's own draft final_response, so a same-turn STALE or FAILED claim never reaches
+    the user. Shape matches hooks.md's pre_verify contract exactly: {"action": "continue",
+    "message": str}. Uses the default (no inline_unbacked) inline_worthy test, same STALE/
+    FAILED-only bar as the Check line's receipts framing (item 41): a plain NOT_BACKED claim
+    has no receipt, which is common and not itself a contradiction worth stopping the turn
+    over; STALE/FAILED mean this turn's own evidence actively contradicts the draft. Returns
+    None when nothing inline-worthy is present."""
+    flagged = [v for v in verdicts if inline_worthy(v)]
+    if not flagged:
+        return None
+    sentences = []
+    for v in flagged:
+        quoted = v.claim.text.strip()
+        if len(quoted) > 140:
+            quoted = quoted[:137] + "..."
+        if v.status == "FAILED":
+            fix = "Say it failed, or fix the failure before claiming it worked."
+        else:  # STALE
+            fix = "Rerun the check, or say it has not been rerun since the change."
+        sentences.append(f'Your draft says "{quoted}", but {v.note}. {fix}')
+    return {"action": "continue", "message": " ".join(sentences)}
+
+
 # Kinds the optional 'inline_unbacked' setting (default off) restores to the reply line for
 # users who want the old higher-stakes-kinds-inline behavior back (item 41 part b).
 _INLINE_NOT_BACKED_KINDS = {"sent", "paid", "deployed", "pushed", "deleted", "scheduled"}

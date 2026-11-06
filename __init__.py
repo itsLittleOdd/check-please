@@ -380,18 +380,33 @@ def on_transform_llm_output(response_text: str = "", session_id: Any = None, **k
 
 
 def on_pre_verify(session_id: Any = None, coding: bool = False, attempt: int = 0,
-                   changed_paths: Any = None, **kwargs: Any) -> Any:
-    """Backlog item 9: nudge the agent to rerun tests if the verify gate fires on edited code
-    while the session's last known test pass predates a later edit with no rerun since.
-    Scoped to coding sessions, one-shot per turn (idempotent on attempt), off entirely when
-    the 'verify_nudge' config is disabled."""
+                   final_response: str = "", changed_paths: Any = None, **kwargs: Any) -> Any:
+    """Backlog item 30 (catch before send) plus item 9 (verify nudge). Scoped to coding
+    sessions, one-shot per turn (idempotent on attempt). Item 30 runs first: check this turn's
+    own draft final_response against this turn's evidence (plus cross-turn stale and session-
+    recap evidence, same pipeline on_transform_llm_output uses) and, if any inline-worthy
+    STALE/FAILED claim is in the draft, send the agent back before the user ever sees it. Item
+    9's generic 'rerun tests' nudge only fires when item 30 found nothing to catch, so the two
+    never double-nudge in one turn. Each is off entirely when its own config is disabled."""
     try:
-        if not bool(_settings.get("verify_nudge", True)):
-            return None
         if attempt or not coding:
             return None
         sid = _session(session_id)
         rec = _cross_record(sid)
+        if bool(_settings.get("catch_before_send", True)):
+            with _LOCK:
+                evidence = list(_LEDGER.get(sid, {}).get("evidence", []))
+            verdicts = engine.check_turn(final_response or "", evidence)
+            if rec["edited_after_pass"] and rec["last_pass_turn"] is not None:
+                note = (f"tests passed in turn {rec['last_pass_turn']} ({rec['pass_detail']}), "
+                        "code changed since, no rerun this turn")
+                verdicts = engine.apply_cross_turn_stale(verdicts, True, note)
+            verdicts = engine.apply_session_evidence(verdicts, _load_session_evidence(sid))
+            directive = engine.catch_before_send_directive(verdicts)
+            if directive is not None:
+                return directive
+        if not bool(_settings.get("verify_nudge", True)):
+            return None
         return engine.verify_nudge_directive(rec["edited_after_pass"], rec["last_pass_turn"], rec["pass_detail"])
     except Exception:
         logger.debug("check-please pre_verify failed", exc_info=True)
@@ -426,6 +441,10 @@ def register(ctx) -> None:
         pass
     try:
         _settings["verify_nudge"] = ctx.get_config("verify_nudge", default=True)
+    except Exception:
+        pass
+    try:
+        _settings["catch_before_send"] = ctx.get_config("catch_before_send", default=True)
     except Exception:
         pass
     try:

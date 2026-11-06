@@ -193,5 +193,36 @@ class RealHookHarnessTest(unittest.TestCase):
         self.assertNotIn("not backed", transformed_3)
 
 
+    def test_pre_verify_catches_a_stale_claim_in_final_response_through_the_real_dispatch(self):
+        """Backlog item 30 (catch before send): tests passed turn 1, code edited turn 2 with
+        no rerun, and the agent's own draft final_response still claims they pass. pre_verify
+        should return a continue directive naming the stale claim, dispatched through the real
+        PluginManager (not a direct function call)."""
+        manager = self.plugins.get_plugin_manager()
+        manager.discover_and_load(force=True)
+        session_id = "sess-real-hook-4"
+
+        manager.invoke_hook("pre_llm_call", session_id=session_id, turn_id="turn-1")
+        manager.invoke_hook(
+            "post_tool_call", tool_name="terminal", args={"command": "pytest -q"},
+            result={"exit_code": 0, "output": "OK"}, status="success", session_id=session_id,
+        )
+        manager.invoke_hook("transform_llm_output", response_text="Tests pass.", session_id=session_id)
+
+        manager.invoke_hook("pre_llm_call", session_id=session_id, turn_id="turn-2")
+        manager.invoke_hook(
+            "post_tool_call", tool_name="write_file", args={"path": "pricing.py"},
+            result={"error": None}, status="success", session_id=session_id,
+        )
+        results = manager.invoke_hook(
+            "pre_verify", session_id=session_id, platform="cli", model="x", coding=True,
+            attempt=0, final_response="Tests pass.", changed_paths=["pricing.py"],
+        )
+        directive = next((r for r in results if isinstance(r, dict) and r.get("action") == "continue"), None)
+        self.assertIsNotNone(directive, "pre_verify did not return a continue directive")
+        self.assertIn("Tests pass", directive["message"])
+        self.assertIn("rerun", directive["message"].lower())
+
+
 if __name__ == "__main__":
     unittest.main()

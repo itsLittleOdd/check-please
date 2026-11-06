@@ -25,6 +25,11 @@ config_schema:
     default: true
     label: Verify nudge
     description: "On coding turns, ask the agent to rerun tests before finishing when tests last passed before a later edit with no rerun since. Set false to disable."
+  catch_before_send:
+    type: bool
+    default: true
+    label: Catch before send
+    description: "On coding turns, before the agent finishes, check its own draft reply against this turn's evidence; if it still makes a stale or failed claim (for example 'Tests pass' right after an edit with no rerun), send it back once with the exact claim and the fix, before the user ever sees it. Set false to disable."
   inline_unbacked:
     type: bool
     default: false

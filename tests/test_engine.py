@@ -1482,6 +1482,40 @@ class VerifyNudgeDirective(unittest.TestCase):
         self.assertIn("rerun", directive["message"].lower())
 
 
+class CatchBeforeSendDirective(unittest.TestCase):
+    """Backlog item 30: pre_verify continue directive built from this turn's own draft
+    final_response, naming the exact stale/failed claim and the fix, before the user sees it."""
+
+    def test_none_when_nothing_inline_worthy(self):
+        verdicts = engine.check_turn("Sent the invoice to Dana.", [])  # NOT_BACKED only
+        self.assertIsNone(engine.catch_before_send_directive(verdicts))
+
+    def test_names_the_stale_claim_and_the_fix(self):
+        verdicts = engine.check_turn("Tests pass.", [
+            ev("terminal", {"command": "pytest -q"}, seq=1),
+            ev("write_file", {"path": "pricing.py"}, seq=2),
+        ])
+        directive = engine.catch_before_send_directive(verdicts)
+        self.assertEqual(directive["action"], "continue")
+        self.assertIn("Tests pass", directive["message"])
+        self.assertIn("rerun", directive["message"].lower())
+
+    def test_names_a_failed_claim(self):
+        verdicts = engine.check_turn("Deployed to prod.", [
+            ev("terminal", {"command": "vercel deploy --prod"}, result={"exit_code": 1}, seq=1),
+        ])
+        directive = engine.catch_before_send_directive(verdicts)
+        self.assertEqual(directive["action"], "continue")
+        self.assertIn("Deployed to prod", directive["message"])
+        self.assertIn("failed", directive["message"].lower())
+
+    def test_not_backed_alone_never_triggers_a_directive(self):
+        """Item 41's receipts framing: a plain not-backed claim is not a contradiction, so
+        catch-before-send (unlike /check) never stops the turn over it by default."""
+        verdicts = engine.check_turn("Paid the vendor invoice.", [])
+        self.assertIsNone(engine.catch_before_send_directive(verdicts))
+
+
 class ClaimsPayloadSerialization(unittest.TestCase):
     """Backlog item 11: the exact JSON shape persisted to ctx.state and served by
     dashboard/plugin_api.py's GET /claims route for the Desktop pane."""
