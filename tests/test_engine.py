@@ -1195,6 +1195,58 @@ class EditedProofDetection(unittest.TestCase):
         self.assertIn("Disclose the edit", directive["message"])
 
 
+class ShellWritesAreEdits(unittest.TestCase):
+    """Item 43 gap (a), 16:05 diagnosis: a successful terminal call that writes a file via a
+    shell verb (cp, mv, redirect, tee, sed -i, ...) must classify as the same saved/saved_code
+    evidence a write_file/patch to that path would, so _find_edited_proof can see it as an
+    edit between a failure and a later pass. All invented examples."""
+
+    def test_redirect_to_code_file_is_saved_code(self):
+        result = ev("terminal", {"command": "echo '{\"a\":1}' > config.json"})
+        self.assertEqual(result.kind, "saved_code")
+        self.assertTrue(result.ok)
+        self.assertIn("config.json", result.detail)
+
+    def test_append_redirect_to_notes_is_saved_not_stale_eligible(self):
+        result = ev("terminal", {"command": "echo done >> notes/progress.txt"})
+        self.assertEqual(result.kind, "saved")
+        self.assertFalse(result.stales_tests)
+
+    def test_cp_destination_is_the_target(self):
+        result = ev("terminal", {"command": "cp bin/deploy-upload.new bin/deploy-upload"})
+        self.assertEqual(result.kind, "saved")
+        self.assertIn("bin/deploy-upload", result.detail)
+
+    def test_sed_in_place_target_is_the_target(self):
+        result = ev("terminal", {"command": "sed -i '' 's/FAIL_AT=1/FAIL_AT=0/' bin/deploy-upload"})
+        self.assertEqual(result.kind, "saved")
+        self.assertIn("bin/deploy-upload", result.detail)
+
+    def test_tee_target_is_the_target(self):
+        result = ev("terminal", {"command": "echo '{}' | tee config.json"})
+        self.assertEqual(result.kind, "saved_code")
+        self.assertIn("config.json", result.detail)
+
+    def test_failed_shell_write_is_not_evidence(self):
+        result = ev("terminal", {"command": "cp a.py b.py"}, {"exit_code": 1, "output": "cp: a.py: No such file"})
+        self.assertIsNone(result)
+
+    def test_plain_read_command_is_not_a_write(self):
+        self.assertIsNone(ev("terminal", {"command": "cat bin/deploy-upload"}))
+
+    def test_shell_write_closes_the_edited_proof_gap(self):
+        """The exact diagnosed shape: a failed deploy, a shell sed -i on the deploy tool
+        (no write_file/patch call at all), then a passing deploy, must read EDITED."""
+        evidence = [
+            ev("terminal", {"command": "netlify deploy --prod"}, {"exit_code": 1, "output": "upload failed"}, seq=1),
+            ev("terminal", {"command": "sed -i '' 's/FAIL_AT=1/FAIL_AT=0/' bin/deploy-upload"}, seq=2),
+            ev("terminal", {"command": "netlify deploy --prod"}, seq=3),
+        ]
+        v = engine.check_turn("Staging is live!", evidence)
+        self.assertEqual(v[0].status, "EDITED")
+        self.assertIn("bin/deploy-upload", v[0].note)
+
+
 class LadderFamilyScoping(unittest.TestCase):
     """Discovered item 18: proven_rung must be scoped to the claimed item's own ladder
     family, never the turn's single globally-highest evidence kind."""

@@ -518,6 +518,64 @@ def _single_pipe_kind_is_ambiguous(cmd: str, kind: Optional[str]) -> bool:
     return all(_PIPE_FILTER_CMD.search(p) for p in parts[1:])
 
 
+# Item 43 gap (a), 16:05 diagnosis: a shell command can edit a proof file just as surely as
+# write_file/patch (sed -i on bin/deploy-upload, a redirect into config.json, cp over a test
+# fixture). Before this, _find_edited_proof's writes list only ever saw _WRITE_TOOLS calls, so
+# a failed-deploy / shell-edit-the-tool / passing-deploy sequence with no write_file call at
+# all produced no edit evidence and the claim read plain BACKED. Conservative, best-effort
+# target extraction: last token for cp/mv/ln/install (the destination), all remaining tokens
+# for touch/chmod, the file after -i for sed/perl, every redirect target, every tee target.
+# Quoted targets have their quotes stripped. This function is only called when _scan_ladder
+# found no ladder kind at all, so it never competes with a real deploy/test/push match in the
+# same command.
+_REDIRECT_TARGET = re.compile(r"(?:>>|>)\s*([^\s|&;]+)")
+_TEE_TARGET = re.compile(r"\btee\b(?:\s+-\w+)*\s+([^\s|&;]+(?:\s+[^\s|&;]+)*)", _I)
+_CP_MV_LN_INSTALL_CMD = re.compile(r"(?:^|[;&|]\s*)(?:sudo\s+)?(?:cp|mv|ln|install)\s+(.+?)(?:[;&|]|$)", _I)
+_TOUCH_CMD = re.compile(r"(?:^|[;&|]\s*)touch\s+(.+?)(?:[;&|]|$)", _I)
+_CHMOD_CMD = re.compile(r"(?:^|[;&|]\s*)chmod\s+\S+\s+(.+?)(?:[;&|]|$)", _I)
+_SED_PERL_I_CMD = re.compile(r"""(?:^|[;&|]\s*)(?:sed|perl)\s+-i\S*\s+(?:['"].*?['"]\s+)?(.+?)(?:[;&|]|$)""", _I)
+
+
+def _strip_quotes(token: str) -> str:
+    token = token.strip()
+    if len(token) >= 2 and token[0] == token[-1] and token[0] in "'\"":
+        token = token[1:-1]
+    return token
+
+
+def _shell_write_targets(cmd: str) -> list:
+    """Best-effort list of file paths a shell command writes to, or [] when the command
+    does not look like a write. Order: redirects and tee first (they can coexist with other
+    verbs), then the single-verb forms, each returning on first match since a real command
+    normally only does one of these."""
+    targets = []
+    for m in _REDIRECT_TARGET.finditer(cmd):
+        targets.append(_strip_quotes(m.group(1)))
+    for m in _TEE_TARGET.finditer(cmd):
+        for tok in m.group(1).split():
+            if not tok.startswith("-"):
+                targets.append(_strip_quotes(tok))
+    if targets:
+        return targets
+    m = _CP_MV_LN_INSTALL_CMD.search(cmd)
+    if m:
+        toks = [t for t in m.group(1).split() if not t.startswith("-")]
+        if toks:
+            return [_strip_quotes(toks[-1])]
+    m = _SED_PERL_I_CMD.search(cmd)
+    if m:
+        toks = [t for t in m.group(1).split() if not t.startswith("-")]
+        if toks:
+            return [_strip_quotes(toks[-1])]
+    m = _TOUCH_CMD.search(cmd)
+    if m:
+        return [_strip_quotes(t) for t in m.group(1).split() if not t.startswith("-")]
+    m = _CHMOD_CMD.search(cmd)
+    if m:
+        return [_strip_quotes(t) for t in m.group(1).split() if not t.startswith("-")]
+    return []
+
+
 def classify_call(tool_name: str, args: Any, result: Any = None, status: Optional[str] = None,
                   seq: int = 0, ts: float = 0.0) -> Optional[Evidence]:
     """Return the evidence a tool call provides, or None when it proves nothing on the ladder."""
@@ -538,6 +596,15 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
         kind = _scan_ladder(cmd)
         if kind is None and ok and _DELETE_OUTPUT.search(str(result or "")):
             kind = "deleted"
+        if kind is None and ok:
+            # Item 43 gap (a): a shell write (cp, redirect, tee, sed -i, ...) edits a file
+            # exactly like write_file/patch, so it must be visible to _find_edited_proof too.
+            targets = _shell_write_targets(cmd)
+            if targets:
+                path = targets[0]
+                wkind = "saved_code" if _is_code_path(path) else "saved"
+                stales = not _is_docs_or_notes_path(path)
+                return Evidence(wkind, True, name, _display_path(path)[:160], seq, ts, "", stales_tests=stales)
         if not ok and "&&" in cmd:
             earliest = _earliest_chain_kind(cmd)
             if earliest:
