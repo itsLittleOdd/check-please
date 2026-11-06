@@ -270,6 +270,21 @@ class ExtractClaims(unittest.TestCase):
         # A real claim right after a heading still counts; only the heading line itself drops.
         self.assertEqual(self.kinds("## Status\nI deployed the fix to staging."), ["deployed"])
 
+    def test_casual_works_language_not_flagged(self):
+        # Item 27 tick 13: the real-world replay's biggest flag source (tested) traced back to
+        # bare conversational "works"/"everything works" phrasing with no test-cue word nearby.
+        # Invented examples only.
+        self.assertEqual(self.kinds("The new pricing plan works great for small teams."), [])
+        self.assertEqual(self.kinds("This library works great once you get past the setup."), [])
+        self.assertEqual(self.kinds("Everything works together nicely once it's wired up this way."), [])
+
+    def test_works_claims_still_count_with_verification_wording(self):
+        # The same phrasing still counts when it is tied to a real check. Invented examples only.
+        self.assertEqual(self.kinds("I patched the race condition and it works correctly now."), ["tested"])
+        self.assertEqual(self.kinds("Ran the full suite twice and everything works as expected."), ["tested"])
+        self.assertEqual(self.kinds("Checked it myself so everything works on the new box."), ["tested"])
+        self.assertEqual(self.kinds("Everything checks out on the import job."), ["tested"])
+
     def test_table_rows_ignored(self):
         # Invented example: a status table whose cells happen to contain claim words.
         text = "| step | status |\n| --- | --- |\n| deploy | sent |\n| backup | paid |\n"

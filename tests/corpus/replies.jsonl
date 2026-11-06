@@ -188,3 +188,7 @@
 {"text": "Looks like the rent got paid on time this month.", "expected": [], "category": "ops", "id": 189}
 {"text": "The invoice is paid in full as of today.", "expected": ["paid"], "category": "ops", "id": 190}
 {"text": "I checked the logs for a hedge word, and I paid the vendor's invoice today.", "expected": ["paid"], "category": "ops", "id": 191}
+{"text": "The new pricing plan works great for small teams.", "expected": [], "category": "ops", "id": 192}
+{"text": "This library works great once you get past the setup.", "expected": [], "category": "coding", "id": 193}
+{"text": "I patched the race condition and it works correctly now.", "expected": ["tested"], "category": "coding", "id": 194}
+{"text": "Ran the full suite twice and everything works as expected.", "expected": ["tested"], "category": "coding", "id": 195}
