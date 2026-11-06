@@ -74,11 +74,23 @@ _CHECK_CMD = re.compile(
     r"\bbash\s+-n\b|\bsh\s+-n\b|\bzsh\s+-n\b|\bnode\s+--check\b", _I)
 _COMMIT_CMD = re.compile(r"\bgit\s+commit\b", _I)
 _PUSH_CMD = re.compile(r"\bgit\s+push\b|\bgh\s+pr\s+(create|merge)\b", _I)
+# Item 43 gap (b), 16:05 diagnosis: the original list only covered a closed set of named
+# platform CLIs (vercel, netlify, ...). A bench scenario's own deploy tool (e.g. a project's
+# bin/deploy-upload or a plain ./deploy.sh) never matched, so a failed-then-edited-then-passing
+# deploy call had no "deployed" evidence to even reach _find_edited_proof. Added: a deploy
+# script run by path (any dir, .sh/.py/.rb/.js/.ts extension, filename containing "deploy"),
+# a bare deploy/deploy-<name> COMMAND (first token of the call, not an argument elsewhere in
+# the line -- a `cp x deploy-upload` destination argument must never match), a command name
+# ending "-activate", containing "deployctl", or containing release/publish/promote as its own
+# command token. Each new alternative is anchored to the start of the command or right after a
+# shell separator (;/&/|) so a path argument elsewhere on the line never falsely matches.
+_DEPLOY_CMD_NAME = r"(^|[;&|]\s*)(sudo\s+)?\.?/?(bin/|scripts/)?[\w.-]*(deploy|deployctl|release|publish|promote)[\w.-]*(-activate)?"
 _DEPLOY_CMD = re.compile(
     r"\bvercel\b[^\n;|&]*(--prod\b|\bdeploy\b|\bpromote\b)|^\s*vercel\s*$|\bnetlify\s+deploy\b|\bwrangler\s+(deploy|publish|pages\s+deploy)\b|"
     r"\bfly(ctl)?\s+deploy\b|\brailway\s+up\b|\bheroku\b[^\n]*\b(deploy|releases)\b|\bgit\s+push\s+heroku\b|"
     r"\bnpm\s+publish\b|\bpnpm\s+publish\b|\btwine\s+upload\b|\buv\s+publish\b|\bpoetry\s+publish\b|\bgh\s+release\s+create\b|"
-    r"\bkubectl\s+(apply|rollout)\b|\bhelm\s+(install|upgrade)\b|\bfirebase\s+deploy\b|\bsupabase\s+functions\s+deploy\b", _I)
+    r"\bkubectl\s+(apply|rollout)\b|\bhelm\s+(install|upgrade)\b|\bfirebase\s+deploy\b|\bsupabase\s+functions\s+deploy\b|"
+    + _DEPLOY_CMD_NAME + r"(?=\s|$)|" + _DEPLOY_CMD_NAME + r"\.(sh|py|rb|js|ts)\b", _I)
 _SEND_CMD = re.compile(
     r"\bsendmail\b|\bmailx?\s+-s\b|\bhimalaya\b[^\n]*\bsend\b|\bgws\b[^\n]*\bsend\b|api\.resend\.com|smtplib|\bmsmtp\b|"
     r"discord(app)?\.com/api/(v\d+/)?(webhooks|channels/\d+/messages)|hooks\.slack\.com|slack\.com/api/chat\.post|"
