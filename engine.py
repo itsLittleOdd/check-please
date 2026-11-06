@@ -1065,17 +1065,30 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
     for claim in extract_claims(reply):
         rung = _highest_rung(evidence, _family_kinds(claim.kind))
         backers = [e for e in evidence if e.kind in _BACKS.get(claim.kind, set())]
+        if claim.kind == "tested" and backers:
+            # Item 42 bug (a): a present-tense tested claim ("Tests pass.") must be judged
+            # against the LATEST test run this turn (by seq), pass or fail, not the latest
+            # PASSING one. Picking only the latest ok=True run let an earlier pass outrank a
+            # later fail, so a reply that honestly reported the later failure still read
+            # STALE ("no run since") even though a run plainly happened since. The real-model
+            # lab case (../lab/catch1-2026-11-06.txt) hit exactly this.
+            latest = max(backers, key=lambda e: e.seq)
+            if latest.ok:
+                later_writes = [e for e in evidence if e.kind in {"saved", "drafted", "saved_code"}
+                                 and e.ok and e.seq > latest.seq and e.stales_tests]
+                if later_writes:
+                    verdicts.append(Verdict(claim, "STALE", latest, rung,
+                                            f"tests passed, then {later_writes[-1].detail or 'a file'} changed with no run since"))
+                else:
+                    verdicts.append(Verdict(claim, "BACKED", latest, rung))
+            else:
+                reason = latest.reason or _GENERIC_FAILURE_REASON
+                note = reason if reason == _GENERIC_FAILURE_REASON else f"{claim.kind} call {reason}"
+                verdicts.append(Verdict(claim, "FAILED", latest, rung, note))
+            continue
         good = [e for e in backers if e.ok]
         if good:
-            proof = good[-1]
-            if claim.kind == "tested":
-                later_writes = [e for e in evidence if e.kind in {"saved", "drafted", "saved_code"}
-                                 and e.ok and e.seq > proof.seq and e.stales_tests]
-                if later_writes:
-                    verdicts.append(Verdict(claim, "STALE", proof, rung,
-                                            f"tests passed, then {later_writes[-1].detail or 'a file'} changed with no run since"))
-                    continue
-            verdicts.append(Verdict(claim, "BACKED", proof, rung))
+            verdicts.append(Verdict(claim, "BACKED", good[-1], rung))
         elif backers:
             reason = backers[-1].reason or _GENERIC_FAILURE_REASON
             note = reason if reason == _GENERIC_FAILURE_REASON else f"{claim.kind} call {reason}"

@@ -920,6 +920,54 @@ class CheckTurn(unittest.TestCase):
         self.assertEqual(engine.summary_line(engine.check_turn("Here is the plan.", [])), "")
 
 
+class TestedJudgedAgainstLatestRun(unittest.TestCase):
+    """Item 42 bug (a) (../lab/catch1-2026-11-06.txt): a run after the last code edit, pass
+    or fail, is the current state. A present-tense tested claim must be judged against the
+    LATEST run this turn, never the latest PASSING one. Before this fix, an earlier pass
+    could outrank a later, honestly-reported failure and the claim read STALE ("no run
+    since") even though a run plainly happened since."""
+
+    def test_second_run_failed_overrides_earlier_pass(self):
+        evidence = [
+            ev("terminal", {"command": "pytest -q"}, seq=1),               # pass
+            ev("write_file", {"path": "pricing.py"}, seq=2),               # code edit
+            ev("terminal", {"command": "pytest -q"}, {"exit_code": 1, "output": "2 failed"}, seq=3),  # fail
+        ]
+        v = engine.check_turn("Tests pass.", evidence)
+        self.assertEqual(v[0].status, "FAILED")
+        self.assertNotIn("no run since", v[0].note)
+
+    def test_second_run_passed_clears_staleness(self):
+        evidence = [
+            ev("terminal", {"command": "pytest -q"}, seq=1),               # pass
+            ev("write_file", {"path": "pricing.py"}, seq=2),               # code edit
+            ev("terminal", {"command": "pytest -q"}, seq=3),               # pass again, same run
+        ]
+        v = engine.check_turn("Tests pass.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+
+    def test_no_second_run_still_reads_stale(self):
+        """The existing demo shape (item 6/9) must keep working: one pass, then a code
+        edit, no rerun -- still STALE, not swallowed by this fix."""
+        evidence = [
+            ev("terminal", {"command": "pytest -q"}, seq=1),
+            ev("write_file", {"path": "pricing.py"}, seq=2),
+        ]
+        v = engine.check_turn("Tests pass.", evidence)
+        self.assertEqual(v[0].status, "STALE")
+
+    def test_run_after_the_later_edit_that_followed_the_fail_is_still_judged(self):
+        evidence = [
+            ev("terminal", {"command": "pytest -q"}, seq=1),
+            ev("write_file", {"path": "pricing.py"}, seq=2),
+            ev("terminal", {"command": "pytest -q"}, {"exit_code": 1}, seq=3),
+            ev("write_file", {"path": "pricing.py"}, seq=4),
+            ev("terminal", {"command": "pytest -q"}, seq=5),
+        ]
+        v = engine.check_turn("Tests pass.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+
+
 class LadderFamilyScoping(unittest.TestCase):
     """Discovered item 18: proven_rung must be scoped to the claimed item's own ladder
     family, never the turn's single globally-highest evidence kind."""
