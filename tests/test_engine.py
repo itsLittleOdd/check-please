@@ -209,15 +209,39 @@ class ChainedShellCommands(unittest.TestCase):
         self.assertEqual(e.kind, "pushed")
         self.assertFalse(e.ok)
 
-    def test_double_pipe_chains_are_an_untouched_gap(self):
-        """Honest limit, logged not fixed: `||` has asymmetric semantics from both `&&` and
-        `;` (the second side only runs if the first FAILED, and if the whole thing still
-        fails, both sides failed; if it succeeds, either side could be the one that actually
-        ran), so copying either existing fix would be a guess, not a proof. Needs its own
-        design pass, not attempted this tick."""
+    def test_double_pipe_chain_failure_is_unambiguous_both_sides_ran_and_failed(self):
+        """`||` fix (item 40 cause 3, the `||` case): unlike `;`, an overall FAILURE on a
+        `||` chain means both sides genuinely ran and genuinely failed (the second side
+        only runs because the first failed, and it failed too), so this is unchanged from
+        before the fix, with no ambiguity guard needed on the failure side."""
         e = ev("terminal", {"command": "git push || git push --force"}, {"exit_code": 1})
         self.assertEqual(e.kind, "pushed")
         self.assertFalse(e.ok)
+
+    def test_double_pipe_chain_success_matching_first_stage_is_trusted(self):
+        """The picked kind IS the first sub-command's own kind, which is the only shape an
+        overall success can prove without the second side running at all, so this stays
+        BACKED, unchanged from before the fix."""
+        e = ev("terminal", {"command": "git push || git push --force"})
+        self.assertEqual(e.kind, "pushed")
+        self.assertTrue(e.ok)
+
+    def test_double_pipe_chain_success_priority_mismatch_is_no_evidence(self):
+        """The bug this tick fixes: `deploy_prod.sh || echo fallback ok` (invented) succeeds
+        overall whenever EITHER side succeeds. If deploy_prod.sh actually failed and the
+        echo fallback is what made the call read ok=True, crediting "deployed" as BACKED
+        would be wrong -- deploy_prod.sh is exactly the command that failed. We cannot
+        prove which side actually ran, so this is no evidence at all, never a guessed
+        BACKED verdict."""
+        e = ev("terminal", {"command": "netlify deploy --prod || stripe charge the card"})
+        self.assertIsNone(e)
+
+    def test_double_pipe_chain_single_matched_stage_is_unaffected(self):
+        """Only one sub-command has a recognizable kind (`echo` has none): not the
+        two-or-more-distinct-kind ambiguous shape, so the normal verdict still applies."""
+        e = ev("terminal", {"command": "git push || echo fallback ok"})
+        self.assertEqual(e.kind, "pushed")
+        self.assertTrue(e.ok)
 
 
 class ClassifyCallToolFamilies(unittest.TestCase):

@@ -265,6 +265,33 @@ def _semicolon_kind_is_ambiguous(cmd: str, kind: Optional[str]) -> bool:
     return part_kinds[-1] != kind
 
 
+def _double_pipe_kind_is_ambiguous(cmd: str, kind: Optional[str]) -> bool:
+    """Item 40 cause (3), the `||` case (the other named gap from the 02:35 tick, design
+    pass done separately from `;` since the semantics are the mirror image). A `cmd1 ||
+    cmd2` chain only runs `cmd2` when `cmd1` fails; the whole chain's own exit code is
+    nonzero only when BOTH sides fail, and zero when EITHER side succeeds. So an overall
+    FAILURE here is unambiguous (every matched sub-command genuinely ran and genuinely
+    failed, unlike `;`), and needs no guard -- the risk is on the SUCCESS side instead.
+    `_scan_ladder`'s whole-text priority scan can pick a kind from a sub-command that
+    never actually ran: for `deploy_prod.sh || echo fallback ok` (invented), if
+    deploy_prod.sh fails, echo runs and always exits 0, so the call reads ok=True overall,
+    but crediting \"deployed\" as BACKED would be wrong -- deploy_prod.sh is exactly the
+    command that failed. Only the FIRST sub-command's own success explains an overall
+    success without anything after it needing to run, so a picked kind that is not the
+    first sub-command's own kind cannot be trusted as BACKED; this returns True
+    (ambiguous, no evidence) for every success case with 2+ distinct matched kinds where
+    the picked kind differs from the first sub-command's own kind.
+    """
+    parts = cmd.split("||")
+    if len(parts) < 2:
+        return False
+    part_kinds = [_scan_ladder(part) for part in parts]
+    distinct = {k for k in part_kinds if k}
+    if len(distinct) < 2:
+        return False
+    return part_kinds[0] != kind
+
+
 def classify_call(tool_name: str, args: Any, result: Any = None, status: Optional[str] = None,
                   seq: int = 0, ts: float = 0.0) -> Optional[Evidence]:
     """Return the evidence a tool call provides, or None when it proves nothing on the ladder."""
@@ -289,6 +316,8 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
             if earliest:
                 return Evidence(earliest, True, name, short, seq, ts)
         if not ok and ";" in cmd and "&&" not in cmd and _semicolon_kind_is_ambiguous(cmd, kind):
+            return None
+        if ok and "||" in cmd and "&&" not in cmd and _double_pipe_kind_is_ambiguous(cmd, kind):
             return None
         return Evidence(kind, ok, name, short, seq, ts) if kind else None
 
