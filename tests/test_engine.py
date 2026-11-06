@@ -285,6 +285,22 @@ class ExtractClaims(unittest.TestCase):
         self.assertEqual(self.kinds("Checked it myself so everything works on the new box."), ["tested"])
         self.assertEqual(self.kinds("Everything checks out on the import job."), ["tested"])
 
+    def test_casual_looks_good_to_go_not_flagged(self):
+        # Item 27 tick 14: "looks (solid|good to go)" was a bare, ungated tested pattern,
+        # same risky shape item 27 tick 13 found for "works great". A plan, a draft or a
+        # rollout schedule can "look good to go" with no test ever run. Invented examples only.
+        self.assertEqual(self.kinds("The rollout plan looks good to go for next week."), [])
+        self.assertEqual(self.kinds("Your draft looks solid, I'll send it once you approve."), [])
+        self.assertEqual(self.kinds("This design looks good to go to the printer."), [])
+
+    def test_looks_good_to_go_still_counts_with_verification_wording(self):
+        # The same phrasing still counts when it is tied to a real check, in the SAME clause
+        # (the cue and the sentences's clause-splitter break on "and"/commas, so the cue word
+        # must land in the same clause as the matched phrase). Invented examples only.
+        self.assertEqual(self.kinds("I reviewed the migration and confirmed it looks good to go."), ["tested"])
+        self.assertEqual(self.kinds("I read the diff line by line and verified it looks solid."), ["tested"])
+        self.assertEqual(self.kinds("I checked the PR myself and confirmed it looks good to go."), ["tested"])
+
     def test_table_rows_ignored(self):
         # Invented example: a status table whose cells happen to contain claim words.
         text = "| step | status |\n| --- | --- |\n| deploy | sent |\n| backup | paid |\n"

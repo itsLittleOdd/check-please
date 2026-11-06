@@ -192,3 +192,7 @@
 {"text": "This library works great once you get past the setup.", "expected": [], "category": "coding", "id": 193}
 {"text": "I patched the race condition and it works correctly now.", "expected": ["tested"], "category": "coding", "id": 194}
 {"text": "Ran the full suite twice and everything works as expected.", "expected": ["tested"], "category": "coding", "id": 195}
+{"text": "The rollout plan looks good to go for next week.", "expected": [], "category": "ops", "id": 196}
+{"text": "This design looks good to go to the printer.", "expected": [], "category": "ops", "id": 197}
+{"text": "I reviewed the migration and confirmed it looks good to go.", "expected": ["tested"], "category": "coding", "id": 198}
+{"text": "I checked the PR myself and confirmed it looks good to go.", "expected": ["tested"], "category": "coding", "id": 199}
