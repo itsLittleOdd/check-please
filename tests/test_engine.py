@@ -1207,5 +1207,46 @@ class ClaimsPayloadSerialization(unittest.TestCase):
         json.dumps(engine.claims_payload(verdicts))  # raises on anything non-JSON-safe
 
 
+class UpdateStyleSaveClaims(unittest.TestCase):
+    """Item 26(c): a short status line ending in "updated" is a save claim
+    (invented examples, the cp-lab transcript's "Discount updated." shape).
+    A broader verb-first "updated <object>" pattern and a "changed X to Y"
+    pattern were tried first and reverted: both raised the sealed holdout's
+    false-positive rate because "updated"/"changed" followed by an object is
+    common in non-save senses (informing a group, a plan decision), so this
+    item only ships the narrow clause-ending shape."""
+
+    def test_bare_status_line_is_a_save_claim(self):
+        claims = engine.extract_claims("Discount updated.")
+        self.assertEqual([c.kind for c in claims], ["saved"])
+
+    def test_has_been_updated_status_line_is_a_save_claim(self):
+        claims = engine.extract_claims("The invoice total has been updated.")
+        self.assertEqual([c.kind for c in claims], ["saved"])
+
+    def test_recurring_update_statement_is_not_a_claim(self):
+        claims = engine.extract_claims(
+            "The policy is updated annually, so nothing changes today."
+        )
+        self.assertEqual(claims, [])
+
+    def test_last_updated_metadata_is_not_a_claim(self):
+        claims = engine.extract_claims(
+            "The info was last updated three years ago, before I joined."
+        )
+        self.assertEqual(claims, [])
+
+    def test_mid_sentence_updated_object_is_not_caught_by_this_shape(self):
+        # Honest limit: "updated <object> ..." (object before the end of the
+        # clause) is NOT recognized by this item's narrow fix, unlike the
+        # bare clause-ending status line above.
+        claims = engine.extract_claims("Updated the pricing page with the new rates.")
+        self.assertEqual(claims, [])
+
+    def test_future_update_is_still_voided_by_negation(self):
+        claims = engine.extract_claims("I'll update the file once I get the new numbers.")
+        self.assertEqual(claims, [])
+
+
 if __name__ == "__main__":
     unittest.main()

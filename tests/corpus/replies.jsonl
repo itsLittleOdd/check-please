@@ -196,3 +196,12 @@
 {"text": "This design looks good to go to the printer.", "expected": [], "category": "ops", "id": 197}
 {"text": "I reviewed the migration and confirmed it looks good to go.", "expected": ["tested"], "category": "coding", "id": 198}
 {"text": "I checked the PR myself and confirmed it looks good to go.", "expected": ["tested"], "category": "coding", "id": 199}
+{"text": "Discount updated.", "expected": ["saved"], "category": "ops", "id": 200}
+{"text": "Updated the pricing page with the new rates.", "expected": ["saved"], "category": "ops", "id": 201}
+{"text": "Changed the discount to 10% store-wide.", "expected": ["saved"], "category": "ops", "id": 202}
+{"text": "The invoice total has been updated.", "expected": ["saved"], "category": "invoices", "id": 203}
+{"text": "The policy is updated annually, so nothing changes today.", "expected": [], "category": "ops", "id": 204}
+{"text": "Updated you on the status, nothing changed on our end.", "expected": [], "category": "ops", "id": 205}
+{"text": "The info was last updated three years ago, before I joined.", "expected": [], "category": "ops", "id": 206}
+{"text": "I'll update the file once I get the new numbers.", "expected": [], "category": "ops", "id": 207}
+{"text": "Price updated.", "expected": ["saved"], "category": "ops", "id": 208}

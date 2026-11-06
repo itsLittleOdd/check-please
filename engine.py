@@ -379,7 +379,24 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
                   r"queued\b.{0,40}\bfor (today|tomorrow|tonight|next \w+|this \w+)\b|"
                   r"now runs? every (day|week|weekday|weekend|month|hour|\d+)|calendar invite\b)\b"),
     ("deleted", r"\b(deleted|removed (the|it|them|those|these|that)|cleaned up)\b"),
-    ("saved", r"\b(saved|wrote (the|it|a|an|to)|written to|created (the|a|an) (file|draft|doc|document)|updated (the )?file|"
+    ("saved", r"\b(saved|wrote (the|it|a|an|to)|written to|created (the|a|an) (file|draft|doc|document)|"
+              r"updated (the )?file|"
+              # Item 26(c): update-style save claims (invented examples: "Discount updated.",
+              # "Price updated.", "The invoice total has been updated."). A first attempt also
+              # added a generic verb-first "updated <object>" pattern and a "changed X to Y"
+              # pattern; both widened the holdout false-positive rate (0.915 -> 0.890 precision,
+              # fp 12 -> 16) because "updated"/"changed" followed by an object is common in
+              # non-save senses this item didn't anticipate (informing a group, not a pronoun:
+              # "updated the team"; a decision change, not a data edit: "changed the plan to
+              # launch in Q2"). Reverted both; kept only the narrow, low-risk shape actually
+              # seen in the cp-lab transcript: a short status line ending in "updated" with
+              # nothing after it (the clause's last word), which real save-confirmation lines
+              # use ("Discount updated.") but ordinary "updated X for someone" sentences don't.
+              # Still excludes "last updated" (metadata/history, not this turn's action) and a
+              # trailing recurring/frequency marker via the clause-end anchor itself (a
+              # frequency word after "updated" means the clause doesn't end there, so this
+              # pattern simply does not match those sentences at all).
+              r"\b(?!last\s)\w+ (has been |was |is )?updated(?=\s*[.,;:!?]|\s*$)|"
               r"(has|have) been saved|was saved|is saved|persisted (it|the data|to disk)|stored (it|the data)|"
               r"changes? (are |is )?(now )?saved|autosaved)\b"),
 ]]
