@@ -413,6 +413,29 @@ class ExtractClaims(unittest.TestCase):
         self.assertEqual(self.kinds("Sent 4 of 5 invitations before the mail server timed out."),
                          ["sent"])
 
+    def test_recurring_billing_statement_is_not_a_paid_claim(self):
+        # Item 27, paid-family push (2026-11-05 21:00): a recurring or automatic billing
+        # arrangement is a standing schedule, not a payment made this turn. Invented examples
+        # only. The marker can sit before or after the verb, hence the whole-sentence check.
+        self.assertEqual(self.kinds("Rent is paid on the 1st of every month."), [])
+        self.assertEqual(self.kinds("The subscription is paid automatically each cycle."), [])
+        self.assertEqual(self.kinds("Our hosting bill is charged monthly to the same card."), [])
+        self.assertEqual(self.kinds("The invoice is typically paid within 30 days of receipt."), [])
+
+    def test_one_time_paid_claim_without_a_recurring_marker_still_counts(self):
+        # Regression guard: the recurring-statement check must not swallow a genuine
+        # one-time completed payment just because it names an invoice or balance.
+        self.assertEqual(self.kinds("The invoice has been paid in full."), ["paid"])
+        self.assertEqual(self.kinds("I paid the vendor's invoice today."), ["paid"])
+        self.assertEqual(self.kinds("Charged the customer's card for the deposit."), ["paid"])
+
+    def test_recurring_marker_elsewhere_does_not_block_an_unrelated_claim(self):
+        # The whole-sentence scope is new (other guards use the narrower 40-char window), so
+        # confirm it only voids the "paid" kind and leaves a different claim in the same
+        # sentence untouched.
+        self.assertEqual(self.kinds("The report runs automatically every night, and I pushed the fix."),
+                          ["pushed"])
+
 
 class DataAndReportLines(unittest.TestCase):
     """Item 40 cause (2), bench false alarms: a status/report line or a CSV-like data

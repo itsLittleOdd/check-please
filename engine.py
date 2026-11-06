@@ -390,6 +390,22 @@ _OBSERVED_STATE_WINDOW = re.compile(
     r"\b(dashboard|system|log|logs|report|screen|page|record|records|ticket|invoice|"
     r"status\s+(page|bar))\s+(shows?|showing|says?|indicates?|displays?|reads?)\b|"
     r"\baccording to (the |our )?(system|records?|logs?|dashboard|report|ticket|invoice)\b", _I)
+# Item 27, paid-family push continued (2026-11-05 21:00, per the 20:35 entry's "look at the
+# paid family's amount-mention shapes" suggestion): a sentence describing a recurring or
+# automatic billing arrangement reports a standing policy, not a payment the assistant made
+# this turn (invented example: "Rent is paid on the 1st of every month." describes a
+# schedule, not something that happened now; "The subscription is paid automatically each
+# cycle." is the same shape with the marker word AFTER the verb). Checked on the WHOLE
+# sentence, not the 40-char pre-match window the other guards use, because the recurring
+# marker just as often sits after the match as before it. Scoped to the "paid" kind only,
+# this tick's named target family; not applied to other kinds without their own evidence.
+_RECURRING_STATEMENT = re.compile(
+    r"\b(every|each)\s+(day|week|month|year|cycle|quarter|billing cycle|pay period)\b|"
+    r"\b(monthly|weekly|bi-?weekly|quarterly|annually|yearly)\b|"
+    r"\bauto(-|\s)?pay\b|\bautomatically\b|\btypically\b|\busually\b|\bnormally\b|\balways\b|"
+    r"\bon the \d+(st|nd|rd|th)? of (every|each)\b",
+    _I,
+)
 _QUESTION = re.compile(r"\?\s*$")
 _CODE_FENCE = re.compile(r"```.*?```", re.S)
 _INLINE_CODE = re.compile(r"`[^`\n]*`")
@@ -529,6 +545,8 @@ def extract_claims(reply: str) -> list[Claim]:
             if _THIRD_PARTY_SUBJECT_WINDOW.search(window) and not _FIRST_PERSON_WINDOW.search(window):
                 continue
             if _OBSERVED_STATE_WINDOW.search(window):
+                continue
+            if kind == "paid" and _RECURRING_STATEMENT.search(sent):
                 continue
             if kind in _ONE_PER_SENTENCE and (gi, kind) in seen_group:
                 continue
