@@ -148,6 +148,69 @@ def _is_docs_or_notes_path(path: str) -> bool:
     return False
 
 
+# Item 43 (edited-proof detection): a claim backed by a successful call that only succeeded
+# because the agent edited the thing meant to PROVE the claim (a test file, a CI/build script,
+# a deploy tool) between an earlier failure and the later pass is not real proof -- it is the
+# classic "make the check pass by changing the check" failure. Proof-file shape is a closed,
+# path-only heuristic (never file content, which classify_call does not retain): test file
+# names/dirs, bin/scripts/tools/.github/ci dirs, and dot-directory state dirs. Honest limit:
+# the backlog also names "a shebang file" and "basename appears in the failed/successful
+# command text or output" as proof-file shapes; neither is implemented this tick (classify_call
+# does not keep file content or the full raw command/output text on Evidence), logged here
+# rather than guessed around.
+_PROOF_FILE_DIR = re.compile(r"(^|/)(tests?|spec|__tests__|bin|scripts|tools|\.github|ci)/", _I)
+_PROOF_FILE_NAME = re.compile(
+    r"(^|/)(test_[\w.-]+|[\w.-]+_test\.\w+|[\w.-]+\.test\.\w+|[\w.-]+\.spec\.\w+|conftest\.py)$", _I)
+_PROOF_STATE_DIR = re.compile(r"(^|/)\.(cron|deploy|state)/", _I)
+
+
+def _is_proof_file_path(path: str) -> bool:
+    """Item 43: True when *path* (already basename-collapsed for absolute paths by
+    _display_path, so a dir match only works for a relative path) looks like a test file,
+    a CI/build/deploy script, or a dot-directory state file -- the kind of file editing it
+    to force a prior failure to pass is the "edited the check, not the code" failure mode."""
+    if not path:
+        return False
+    low = path.lower().rsplit("?", 1)[0].rsplit("#", 1)[0]
+    return bool(_PROOF_FILE_DIR.search(low) or _PROOF_FILE_NAME.search(low) or _PROOF_STATE_DIR.search(low))
+
+
+def _disclosed_edit(reply: str, path_detail: str) -> bool:
+    """Item 43 disclosure exception: if the reply names the edited proof file (by its own
+    basename) or plainly says it changed the script/test/tool, the edit is not hidden, so the
+    claim is BACKED with a note instead of EDITED."""
+    basename = _basename(path_detail or "")
+    if basename and len(basename) > 2 and re.search(re.escape(basename), reply, _I):
+        return True
+    return bool(re.search(r"\b(edited|changed|modified|updated|fixed)\b.{0,40}\b(script|test|tool|config)\b",
+                           reply, _I))
+
+
+def _find_edited_proof(all_evidence: list, backers: list):
+    """Item 43: among *backers* (same-kind evidence for one claim), find the earliest FAILED
+    call followed by a later PASSING call of the same kind, with a successful write to a proof
+    file (per _is_proof_file_path) strictly between them in *all_evidence*'s seq order. Returns
+    (failed_evidence, passing_evidence, proof_write_evidence) or None. Only the FIRST later pass
+    is considered: a second edit-and-rerun after that first real pass is a separate question
+    this tick does not attempt."""
+    failed = [e for e in backers if not e.ok]
+    passed = [e for e in backers if e.ok]
+    if not failed or not passed:
+        return None
+    first_fail = min(failed, key=lambda e: e.seq)
+    later_passes = [e for e in passed if e.seq > first_fail.seq]
+    if not later_passes:
+        return None
+    first_pass = min(later_passes, key=lambda e: e.seq)
+    writes = [e for e in all_evidence
+              if e.kind in {"saved", "saved_code", "drafted"} and e.ok
+              and first_fail.seq < e.seq < first_pass.seq]
+    for w in writes:
+        if _is_proof_file_path(w.detail):
+            return (first_fail, first_pass, w)
+    return None
+
+
 _READONLY_HINT = re.compile(r"(^|_)(list|get|read|search|fetch|view|show|describe|status|query)(_|$)", _I)
 
 
@@ -1038,7 +1101,7 @@ def extract_claims(reply: str) -> list[Claim]:
 @dataclass
 class Verdict:
     claim: Claim
-    status: str                       # BACKED | STALE | FAILED | NOT_BACKED
+    status: str                       # BACKED | STALE | FAILED | NOT_BACKED | EDITED
     proof: Optional[Evidence] = None
     proven_rung: Optional[str] = None  # highest rung actually proven this turn
     note: str = ""
@@ -1107,6 +1170,20 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
                 if later_writes:
                     verdicts.append(Verdict(claim, "STALE", latest, rung,
                                             f"tests passed, then {later_writes[-1].detail or 'a file'} changed with no run since"))
+                    continue
+                # Item 43: the latest run passed, but only after an earlier failed run of
+                # this same "tested" claim AND an edit to a proof file (e.g. the test file
+                # itself) in between -- the classic "edited the check, not the code" shape.
+                edited = _find_edited_proof(evidence, backers)
+                if edited and edited[1].seq == latest.seq:
+                    proof_write = edited[2]
+                    proof_name = proof_write.detail or "a proof file"
+                    if _disclosed_edit(reply, proof_write.detail):
+                        verdicts.append(Verdict(claim, "BACKED", latest, rung,
+                                                "after an edit the reply mentions"))
+                    else:
+                        verdicts.append(Verdict(claim, "EDITED", latest, rung,
+                                                f"{claim.kind} passed only after {proof_name} was edited"))
                 else:
                     verdicts.append(Verdict(claim, "BACKED", latest, rung))
             else:
@@ -1116,7 +1193,18 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
             continue
         good = [e for e in backers if e.ok]
         if good:
-            verdicts.append(Verdict(claim, "BACKED", good[-1], rung))
+            edited = _find_edited_proof(evidence, backers)
+            if edited:
+                failed_ev, pass_ev, proof_write = edited
+                proof_name = proof_write.detail or "a proof file"
+                if _disclosed_edit(reply, proof_write.detail):
+                    verdicts.append(Verdict(claim, "BACKED", pass_ev, rung,
+                                            "after an edit the reply mentions"))
+                else:
+                    verdicts.append(Verdict(claim, "EDITED", pass_ev, rung,
+                                            f"{claim.kind} passed only after {proof_name} was edited"))
+            else:
+                verdicts.append(Verdict(claim, "BACKED", good[-1], rung))
         elif backers:
             reason = backers[-1].reason or _GENERIC_FAILURE_REASON
             note = reason if reason == _GENERIC_FAILURE_REASON else f"{claim.kind} call {reason}"
@@ -1135,7 +1223,7 @@ def summary_line(verdicts: list[Verdict], inline_unbacked: bool = False) -> str:
     STALE and FAILED counts are unaffected by this setting."""
     if not verdicts:
         return ""
-    counts = {"BACKED": 0, "STALE": 0, "FAILED": 0, "NOT_BACKED": 0}
+    counts = {"BACKED": 0, "STALE": 0, "FAILED": 0, "NOT_BACKED": 0, "EDITED": 0}
     for v in verdicts:
         if v.status == "NOT_BACKED" and not inline_worthy(v, inline_unbacked):
             continue  # no receipt: listed in /check and the Desktop pane, never inline
@@ -1147,12 +1235,14 @@ def summary_line(verdicts: list[Verdict], inline_unbacked: bool = False) -> str:
         parts.append(f"{counts['STALE']} stale")
     if counts["FAILED"]:
         parts.append(f"{counts['FAILED']} failed")
+    if counts["EDITED"]:
+        parts.append(f"{counts['EDITED']} proof edited")
     if counts["NOT_BACKED"]:
         parts.append(f"{counts['NOT_BACKED']} not backed")
     if not parts:
         return ""
     worst = next((v for v in verdicts
-                   if v.status in {"FAILED", "STALE"}
+                   if v.status in {"FAILED", "STALE", "EDITED"}
                    or (v.status == "NOT_BACKED" and inline_worthy(v, inline_unbacked))), None)
     tail = f" First issue: \"{worst.claim.phrase}\" ({worst.note})." if worst else ""
     return f"Check: {', '.join(parts)}.{tail} /check for detail."
@@ -1254,7 +1344,9 @@ def tally_day(day: dict, verdicts: list[Verdict], max_issues: int = 30) -> dict:
     for key in ("claims", "backed", "stale", "failed", "not_backed"):
         day.setdefault(key, 0)
     issues = day.setdefault("issues", [])
-    status_key = {"STALE": "stale", "FAILED": "failed", "NOT_BACKED": "not_backed"}
+    status_key = {"STALE": "stale", "FAILED": "failed", "NOT_BACKED": "not_backed",
+                  "EDITED": "failed"}  # item 43: counted under "failed" (contradicted evidence,
+                                       # same bucket as a failing re-run, not a silent gap)
     for v in verdicts:
         day["claims"] += 1
         if v.status == "BACKED":
@@ -1353,6 +1445,8 @@ def catch_before_send_directive(verdicts: list[Verdict]) -> Optional[dict]:
             quoted = quoted[:137] + "..."
         if v.status == "FAILED":
             fix = "Say it failed, or fix the failure before claiming it worked."
+        elif v.status == "EDITED":
+            fix = "Disclose the edit, or rerun it without touching the proof file first."
         else:  # STALE
             fix = "Rerun the check, or say it has not been rerun since the change."
         sentences.append(f'Your draft says "{quoted}", but {v.note}. {fix}')
@@ -1399,7 +1493,7 @@ def inline_worthy(v: Verdict, inline_unbacked: bool = False) -> bool:
     listed in /check and the Desktop pane. Pass inline_unbacked=True to restore the old behavior
     for the higher-stakes kinds in _INLINE_NOT_BACKED_KINDS (sent, paid, deployed, pushed,
     deleted, scheduled) for users who want it. BACKED is never inline-worthy (nothing to flag)."""
-    if v.status in {"STALE", "FAILED"}:
+    if v.status in {"STALE", "FAILED", "EDITED"}:
         return True
     if v.status == "NOT_BACKED" and inline_unbacked:
         return v.claim.kind in _INLINE_NOT_BACKED_KINDS
@@ -1410,7 +1504,8 @@ def detail_report(verdicts: list[Verdict]) -> str:
     if not verdicts:
         return "Check, Please: no completion claims found in the last reply."
     lines = ["Check, Please: last reply"]
-    label = {"BACKED": "BACKED", "STALE": "STALE", "FAILED": "FAILED", "NOT_BACKED": "NOT BACKED"}
+    label = {"BACKED": "BACKED", "STALE": "STALE", "FAILED": "FAILED", "NOT_BACKED": "NOT BACKED",
+              "EDITED": "EDITED (proof edited)"}
     for v in verdicts:
         lines.append(f"- {label[v.status]}: \"{v.claim.text}\"")
         if v.proof:
