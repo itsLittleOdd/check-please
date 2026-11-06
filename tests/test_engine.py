@@ -416,6 +416,59 @@ class FailureResultDetection(unittest.TestCase):
         self.assertFalse(result.ok)
 
 
+class FailureReason(unittest.TestCase):
+    """Item 38 slice 2: the FAILED verdict's note should say a few specific words (\"deploy
+    script exited 1\") instead of the one generic sentence every failure used to get.
+    Invented example shapes only, same style as the surrounding dict-shape tests."""
+
+    def test_nonzero_exit_code_reason(self):
+        self.assertEqual(engine._failure_reason({"exit_code": 1, "output": "oops"}), "exited 1")
+
+    def test_zero_exit_code_is_not_a_failure_reason_source(self):
+        # _failure_reason is only ever called on a call already judged not-ok; a clean exit
+        # code with an explicit error field should still surface the error, not the exit code.
+        self.assertEqual(engine._failure_reason({"exit_code": 0, "error": "bounced"}), "bounced")
+
+    def test_http_status_reason(self):
+        self.assertEqual(engine._failure_reason({"status_code": 503, "output": "down"}), "http 503")
+        self.assertEqual(engine._failure_reason("HTTP/1.1 503 Service Unavailable"), "http 503")
+
+    def test_test_summary_count_reason(self):
+        self.assertEqual(engine._failure_reason({"output": "Ran 12 tests\n3 failed, 9 passed"}), "3 failed")
+
+    def test_zero_passed_reason(self):
+        self.assertEqual(engine._failure_reason({"output": "0 passed, 0 failed, 1 skipped"}), "0 passed")
+
+    def test_bare_failed_marker_reason(self):
+        self.assertEqual(engine._failure_reason({"output": "Build FAILED"}), "result marked FAILED")
+
+    def test_no_such_file_reason(self):
+        self.assertEqual(engine._failure_reason({"output": "deploy.sh: No such file or directory"}),
+                          "No such file")
+
+    def test_dict_error_field_reason(self):
+        self.assertEqual(engine._failure_reason({"error": "bounced"}), "bounced")
+
+    def test_status_kwarg_reason(self):
+        self.assertEqual(engine._failure_reason({"output": "ok"}, status="timeout"), "call status: timeout")
+
+    def test_nothing_specific_falls_back_to_generic(self):
+        self.assertEqual(engine._failure_reason({"success": False}), engine._GENERIC_FAILURE_REASON)
+
+    def test_check_turn_failed_note_uses_the_specific_reason(self):
+        v = engine.check_turn("Deployed it.",
+                               [ev("terminal", {"command": "vercel deploy --prod"},
+                                   {"exit_code": 1}, seq=1)])[0]
+        self.assertEqual(v.status, "FAILED")
+        self.assertEqual(v.note, "deployed call exited 1")
+
+    def test_check_turn_failed_note_falls_back_to_generic_when_no_specific_reason(self):
+        v = engine.check_turn("I sent it to the client.",
+                               [ev("send_message", {"to": "x"}, {"success": False}, seq=1)])[0]
+        self.assertEqual(v.status, "FAILED")
+        self.assertEqual(v.note, engine._GENERIC_FAILURE_REASON)
+
+
 class ExtractClaims(unittest.TestCase):
     def kinds(self, text):
         return [c.kind for c in engine.extract_claims(text)]

@@ -53,6 +53,7 @@ class Evidence:
     detail: str               # short human description (command, path)
     seq: int = 0              # order within the session
     ts: float = 0.0
+    reason: str = ""          # item 38 slice 2: why a failed call failed, a few words
 
 
 _TEST_CMD = re.compile(
@@ -204,6 +205,57 @@ def _has_failure_marker(text: str) -> bool:
         or _BARE_FAILED_MARKER.search(text)
         or _HTTP_ERROR_STATUS.search(text)
     )
+
+
+_GENERIC_FAILURE_REASON = "the call ran but did not succeed"
+
+
+def _failure_reason(result: Any, status: Optional[str] = None) -> str:
+    """Item 38 slice 2: a few words on WHY a failed call failed, for the FAILED verdict's
+    note, instead of the one generic sentence every failure used to get. Mirrors
+    call_succeeded()'s own checks, in the same priority order, so a reason is only ever
+    reported for a call this module already decided is a failure; never guess a reason for
+    a call that actually passed. Falls back to the old generic sentence when nothing more
+    specific is found, so no caller sees an empty note."""
+    if status and str(status).lower() in {"error", "blocked", "denied", "failed", "timeout", "cancelled"}:
+        return f"call status: {status}"
+    data = _as_dict(result)
+    text_blob = _result_text_blob(data) if data else str(result or "")
+    m = _HTTP_ERROR_STATUS.search(text_blob)
+    if m:
+        return f"http {m.group(1)}"
+    m = _FAILURE_COUNT.search(text_blob) or _FAILURE_EQ.search(text_blob)
+    if m:
+        return m.group(0)
+    if _ZERO_PASSED.search(text_blob):
+        return "0 passed"
+    if _BARE_FAILED_MARKER.search(text_blob):
+        return "result marked FAILED"
+    m = _RESULT_FAILURE_TEXT.search(text_blob)
+    if m:
+        return m.group(0)
+    if data:
+        err = data.get("error")
+        if err not in (None, "", False, [], {}):
+            return str(err)[:80]
+        http_status = data.get("status_code", data.get("http_status"))
+        if http_status is not None:
+            try:
+                if 400 <= int(http_status) < 600:
+                    return f"http {http_status}"
+            except (TypeError, ValueError):
+                pass
+        code = data.get("exit_code", data.get("returncode", data.get("exitCode")))
+        if code is not None:
+            try:
+                if int(code) != 0:
+                    return f"exited {int(code)}"
+            except (TypeError, ValueError):
+                pass
+        st = str(data.get("status", "")).lower()
+        if st in {"error", "failed", "blocked", "denied"}:
+            return f"call status: {st}"
+    return _GENERIC_FAILURE_REASON
 
 
 # Real Hermes tool names (verified in ~/.hermes/hermes-agent/tools, read-only, 2026-11-05):
@@ -380,6 +432,7 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
     low = name.lower()
     a = _as_dict(args)
     ok = call_succeeded(result, status)
+    reason = "" if ok else _failure_reason(result, status)
 
     if low in _NO_EVIDENCE_TOOLS:
         # A child agent's work is not this parent turn's evidence: the plugin only sees the
@@ -403,7 +456,7 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
         if not ok and "|" in cmd and "&&" not in cmd and ";" not in cmd and "||" not in cmd \
                 and _single_pipe_kind_is_ambiguous(cmd, kind):
             return None
-        return Evidence(kind, ok, name, short, seq, ts) if kind else None
+        return Evidence(kind, ok, name, short, seq, ts, reason) if kind else None
 
     if low in _CODE_TEXT_TOOLS:
         # execute_code runs Python directly; browser_exec runs Python against browser helpers.
@@ -415,7 +468,7 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
         kind = _scan_ladder(code)
         if kind is None and ok and _DELETE_OUTPUT.search(str(result or "")):
             kind = "deleted"
-        return Evidence(kind, ok, name, short, seq, ts) if kind else None
+        return Evidence(kind, ok, name, short, seq, ts, reason) if kind else None
 
     if low in _WRITE_TOOLS:
         path = str(a.get("path") or a.get("file_path") or a.get("filename") or "")
@@ -425,23 +478,23 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
             kind = "saved_code"
         else:
             kind = "saved"
-        return Evidence(kind, ok, name, _display_path(path)[:160], seq, ts)
+        return Evidence(kind, ok, name, _display_path(path)[:160], seq, ts, reason)
 
     if low in {"cronjob", "cron", "schedule", "cronjob_manage"}:
         action = str(a.get("action") or "")
         if action.lower() in {"create", "add", "update", "edit", "resume", ""}:
-            return Evidence("scheduled", ok, name, str(a.get("name") or a.get("schedule") or "")[:160], seq, ts)
+            return Evidence("scheduled", ok, name, str(a.get("name") or a.get("schedule") or "")[:160], seq, ts, reason)
         return None
 
     # Messaging/MCP/connector tools (mcp__<server>__<tool>, connectors__<connector>__<tool>) and
     # bare names like send_message. Read-only verbs never count as a send.
     tail = re.split(r"__|\.", low)[-1]
     if _DRAFT_TOOL.search(tail):
-        return Evidence("drafted", ok, name, _target_hint(a), seq, ts)
+        return Evidence("drafted", ok, name, _target_hint(a), seq, ts, reason)
     if _READONLY_HINT.search(tail):
         return None
     if _SEND_TOOL.search(tail) or low in {"send_message", "message", "imessage"}:
-        return Evidence("sent", ok, name, _target_hint(a), seq, ts)
+        return Evidence("sent", ok, name, _target_hint(a), seq, ts, reason)
     return None
 
 
@@ -914,7 +967,9 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
                     continue
             verdicts.append(Verdict(claim, "BACKED", proof, rung))
         elif backers:
-            verdicts.append(Verdict(claim, "FAILED", backers[-1], rung, "the call ran but did not succeed"))
+            reason = backers[-1].reason or _GENERIC_FAILURE_REASON
+            note = reason if reason == _GENERIC_FAILURE_REASON else f"{claim.kind} call {reason}"
+            verdicts.append(Verdict(claim, "FAILED", backers[-1], rung, note))
         else:
             verdicts.append(Verdict(claim, "NOT_BACKED", None, rung,
                                     f"no {claim.kind} call this turn" + (f"; proven: {rung}" if rung else "")))
