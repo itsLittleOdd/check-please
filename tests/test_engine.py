@@ -1352,5 +1352,50 @@ class TestedBareNoErrorsNoComplaintsAreNotClaims(unittest.TestCase):
             "No complaints from the linter on this pass."))
 
 
+class PaidCompensationAdjectiveAndRoleNouns(unittest.TestCase):
+    """Item 27 tick 17: another "paid" family, compensation-level adjectives
+    and job/role-classification nouns. "well paid", "highly paid", "fairly
+    paid" and "poorly paid" describe how much someone is compensated in
+    general, not a payment made this turn; "paid employees/staff/contractors/
+    workers/interns/roles/hires" classify a group of people by employment
+    type, same adjective-not-action shape as the existing paid-plan/paid-ads
+    noun families. Invented examples only; genuine payment claims must still
+    count, including when "paid" is itself the completed verb right before
+    one of the new excluded nouns' near neighbors that are NOT excluded."""
+
+    def _kinds(self, text):
+        return [c.kind for c in engine.extract_claims(text)]
+
+    def test_compensation_level_adjectives_are_not_claims(self):
+        self.assertNotIn("paid", self._kinds(
+            "The role is well paid for this market."))
+        self.assertNotIn("paid", self._kinds(
+            "These are highly paid contractors on a short contract."))
+        self.assertNotIn("paid", self._kinds(
+            "Teachers here are fairly paid compared to the state average."))
+        self.assertNotIn("paid", self._kinds(
+            "Support staff are poorly paid relative to the workload."))
+
+    def test_paid_role_classification_nouns_are_not_claims(self):
+        self.assertNotIn("paid", self._kinds(
+            "The paid employees get benefits starting next quarter."))
+        self.assertNotIn("paid", self._kinds(
+            "We hired paid interns for the summer program."))
+        self.assertNotIn("paid", self._kinds(
+            "The paid staff outnumber the volunteers two to one."))
+        self.assertNotIn("paid", self._kinds(
+            "Brought on three paid contractors for the migration."))
+        self.assertNotIn("paid", self._kinds(
+            "Opened a paid role on the support team."))
+
+    def test_genuine_payment_claims_still_count(self):
+        self.assertIn("paid", self._kinds(
+            "The invoice is paid in full."))
+        self.assertIn("paid", self._kinds(
+            "Paid the contractor's invoice this morning."))
+        self.assertIn("paid", self._kinds(
+            "Charged the customer's card for the deposit."))
+
+
 if __name__ == "__main__":
     unittest.main()

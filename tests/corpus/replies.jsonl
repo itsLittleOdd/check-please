@@ -219,3 +219,9 @@
 {"text": "No complaints from the neighbors about the noise.", "expected": [], "category": "ops", "id": 220}
 {"text": "No errors came up when I ran the build.", "expected": ["tested"], "category": "coding", "id": 221}
 {"text": "No complaints from the linter on this pass.", "expected": ["tested"], "category": "coding", "id": 222}
+{"text": "The role is well paid for this market.", "expected": [], "category": "ops", "id": 223}
+{"text": "These are highly paid contractors on a short contract.", "expected": [], "category": "ops", "id": 224}
+{"text": "The paid employees get benefits starting next quarter.", "expected": [], "category": "ops", "id": 225}
+{"text": "We hired paid interns for the summer program.", "expected": [], "category": "ops", "id": 226}
+{"text": "Opened a paid role on the support team.", "expected": [], "category": "ops", "id": 227}
+{"text": "The invoice is paid in full.", "expected": ["paid"], "category": "invoices", "id": 228}
