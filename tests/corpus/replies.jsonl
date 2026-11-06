@@ -178,3 +178,7 @@
 {"text": "Ran the cleanup job: 37 of 45 stale rows deleted so far.", "expected": [], "category": "ops", "id": 179}
 {"text": "Sent 4 of 5 invitations before the mail server timed out.", "expected": ["sent"], "category": "email", "id": 180}
 {"text": "Deleted all 45 stale rows.", "expected": ["deleted"], "category": "ops", "id": 181}
+{"text": "The dashboard shows the invoice is paid.", "expected": [], "category": "ops", "id": 182}
+{"text": "The ticket says it was already paid.", "expected": [], "category": "ops", "id": 183}
+{"text": "The log shows the deploy is live.", "expected": [], "category": "ops", "id": 184}
+{"text": "I checked the dashboard for errors, then I deployed the fix.", "expected": ["deployed"], "category": "coding", "id": 185}

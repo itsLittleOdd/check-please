@@ -380,6 +380,32 @@ class ExtractClaims(unittest.TestCase):
         self.assertEqual(self.kinds("37 of 45 rows deleted, and I pushed the migration script."),
                          ["pushed"])
 
+    def test_observed_state_from_a_system_is_not_a_claim(self):
+        # Item 27, paid-family push: a sentence reporting what a dashboard/system/report
+        # already shows is an observation about pre-existing state, not the assistant
+        # claiming it performed the action this turn. Invented examples only. Scoped to
+        # within one comma-split clause, same limit the existing third-party-subject window
+        # already has: a leading "According to the system," clause split off by the comma
+        # splitter loses that context before the next clause's own window starts (honest
+        # residual, logged below rather than widening clause scoping this tick).
+        self.assertEqual(self.kinds("The dashboard shows the invoice is paid."), [])
+        self.assertEqual(self.kinds("The ticket says it was already paid."), [])
+        self.assertEqual(self.kinds("The log shows the deploy is live."), [])
+
+    def test_observed_state_across_a_comma_split_clause_is_an_unfixed_gap(self):
+        # Honest residual: "According to the system, the invoice is paid." splits into two
+        # clauses on the comma (same splitter _ONE_PER_SENTENCE/_THIRD_PARTY_SUBJECT_WINDOW
+        # already live with), so the "According to the system" context never reaches the
+        # second clause's 40-char window. Not fixed this tick; logged, not claimed covered.
+        self.assertEqual(self.kinds("According to the system, the invoice is paid."), ["paid"])
+
+    def test_observed_state_elsewhere_in_sentence_does_not_block_a_real_claim(self):
+        # The window is narrow (same 40-char pre-match window as the third-party guard), so a
+        # mention of a system far earlier in a longer sentence must not swallow a later, real,
+        # agentless claim it has nothing to do with.
+        self.assertEqual(self.kinds("I checked the dashboard for errors, then I deployed the fix."),
+                         ["deployed"])
+
     def test_partial_count_not_yet_scoped_to_sent_or_paid(self):
         # Honest residual: this slice only scoped the whole-sentence partial-count guard to
         # tested/deleted (the two kinds with a known real false alarm). "sent"/"paid" partial

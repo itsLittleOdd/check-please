@@ -379,6 +379,17 @@ _THIRD_PARTY_SUBJECT_WINDOW = re.compile(
     r"\b(he|she|they|him|his|her|hers|them|their|theirs|"
     r"(the|a|an|our|their|his|her)\s+" + _THIRD_PARTY_ROLE_NOUN + r")\b", _I)
 _FIRST_PERSON_WINDOW = re.compile(r"\b(i|i've|i'm|me|my|mine|we|we've|we're|us|our|ours)\b", _I)
+# Item 27, paid-family push (2026-11-05, largest untouched real-world flag source per the
+# 17:04/19:03 entries): a sentence reporting what a SYSTEM already shows is not the assistant
+# claiming it performed the action this turn (invented example: "the dashboard shows the invoice
+# is paid" is an observation about pre-existing state, same family as (b)'s third-party-subject
+# gap but the "subject" here is a system/report, not a person). Checked against the same 40-char
+# pre-match window as the third-party guard, so an agentless real claim after a mention of a
+# system elsewhere in a longer sentence is unaffected.
+_OBSERVED_STATE_WINDOW = re.compile(
+    r"\b(dashboard|system|log|logs|report|screen|page|record|records|ticket|invoice|"
+    r"status\s+(page|bar))\s+(shows?|showing|says?|indicates?|displays?|reads?)\b|"
+    r"\baccording to (the |our )?(system|records?|logs?|dashboard|report|ticket|invoice)\b", _I)
 _QUESTION = re.compile(r"\?\s*$")
 _CODE_FENCE = re.compile(r"```.*?```", re.S)
 _INLINE_CODE = re.compile(r"`[^`\n]*`")
@@ -516,6 +527,8 @@ def extract_claims(reply: str) -> list[Claim]:
             if _NEGATION.search(window):
                 continue
             if _THIRD_PARTY_SUBJECT_WINDOW.search(window) and not _FIRST_PERSON_WINDOW.search(window):
+                continue
+            if _OBSERVED_STATE_WINDOW.search(window):
                 continue
             if kind in _ONE_PER_SENTENCE and (gi, kind) in seen_group:
                 continue
