@@ -351,6 +351,15 @@ _NEGATION = re.compile(
     r"\b(not|n't|never|nothing|no|none|no longer|haven'?t|hasn'?t|didn'?t|won'?t|will|would|could|should|can|cannot|can'?t|"
     r"ready to|about to|going to|plan to|want to|need to|needs to|if you|if the|if it|if this|if that|once|after you|before|"
     r"unless|until|try to|tried to|attempted|failed to|unable|supposedly|allegedly|apparently|reportedly|supposed to|"
+    # Item 27, conditional-trigger push (2026-11-05 22:00): "once"/"if the"/"after you" already
+    # void a claim conditioned on a future event; "when the", "after the" and "as soon as" are
+    # the same family with a different lead-in word (invented examples: "When the deposit
+    # clears, I'll close this out." / "After the invoice is paid, I'll send the receipt." /
+    # "As soon as the deploy finishes, I'll ping you." describe a future trigger, not a
+    # completed action this turn). Scoped to "the" noun-phrase triggers only, not "when it"/
+    # "after it"/"this"/"that", which risk voiding real past-tense completions ("After it
+    # finished, I deployed it." must still count) — a narrower, deliberately safer slice.
+    r"when the|after the|as soon as|"
     r"you\s+already|'s\s+\w+\s+already|was\s+already\b|"
     r"\b(he|she|they|someone|anyone)\s+(said|told|mentioned|claimed|reported|says|tells|told us|let (us|me) know)\b|"
     r"\b(the|our|their) (customer|client|user|vendor|other (team|side)|supplier)\b.{0,25}\b(said|told|mentioned|claimed|reported|says|confirmed)\b|"

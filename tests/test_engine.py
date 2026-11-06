@@ -454,6 +454,23 @@ class ExtractClaims(unittest.TestCase):
             self.kinds("I checked the logs for a hedge word, and I paid the vendor's invoice today."),
             ["paid"])
 
+    def test_future_trigger_phrasing_voids_the_claim(self):
+        # Item 27, conditional-trigger push (2026-11-05 22:00): "when the X [verb]s" / "after
+        # the X [verb]s" / "as soon as the X [verb]s" describe a future trigger the assistant
+        # is waiting on, not a completed action this turn. Invented examples only.
+        self.assertEqual(self.kinds("The receipt goes out after the invoice is paid."), [])
+        self.assertEqual(self.kinds("I close this out when the deposit clears."), [])
+        self.assertEqual(self.kinds("I ping you as soon as the deploy finishes."), [])
+
+    def test_future_trigger_phrasing_does_not_block_a_real_completed_claim(self):
+        # Regression guard: the trigger word only lives in a DIFFERENT clause in these real
+        # cases (comma-split sentences keep separate per-clause windows), so the actual
+        # completed action after it must still count, and a plain past-tense "after"/"when"
+        # with no trigger-clause structure must not be swallowed either.
+        self.assertEqual(self.kinds("After the deploy finished, the invoice is paid."), ["paid"])
+        self.assertEqual(self.kinds("When the retry finished, the build is green."), ["tested"])
+        self.assertEqual(self.kinds("I already paid the invoice after the call ended."), ["paid"])
+
 
 class DataAndReportLines(unittest.TestCase):
     """Item 40 cause (2), bench false alarms: a status/report line or a CSV-like data
