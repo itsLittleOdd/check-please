@@ -473,7 +473,18 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
                   r"(started|created|set)\s+(a|the)\b.{0,25}\b(timer|alarm|reminder)\b|"
                   r"queued\b.{0,40}\bfor (today|tomorrow|tonight|next \w+|this \w+)\b|"
                   r"now runs? every (day|week|weekday|weekend|month|hour|\d+)|calendar invite\b)\b"),
-    ("deleted", r"\b(deleted|removed (the|it|them|those|these|that)|cleaned up)\b"),
+    # Item 27, sixth direct-kind look ("deleted", third unchecked kind, 78 real-world flags,
+    # never checked directly before now). Same adjective/noun-use shape already fixed for
+    # paid/scheduled/deployed/saved: a UI feature name or a physical-space cleanup is not the
+    # assistant deleting data this turn. Invented examples: "Check the Recently Deleted folder
+    # for old backups." (noun use, not an action), "Your deleted messages are kept for 30
+    # days." (feature description), "Cleaned up nicely for the interview." (idiom for grooming,
+    # not deletion), "Cleaned up the kitchen before the guests arrived." (physical tidying, not
+    # data deletion). A genuine completed cleanup ("Cleaned up the temp directory.", own-corpus
+    # id 60) still counts, since "directory" is not in either exclusion list.
+    ("deleted", r"\b(deleted(?!\s+(items?|messages?|scenes?|history|folder|conversations?|requests?|threads?|emails?|photos?))|"
+                 r"removed (the|it|them|those|these|that)|"
+                 r"cleaned up(?!\s+(nicely|well)\b)(?!\s+(the\s+)?(kitchen|room|house|yard|garage|mess|desk|office|closet)\b))\b"),
     # Item 27, first direct look at "saved" (third-largest real-world flag source after
     # paid/tested, never checked directly before now; same adjective/noun-use shape already
     # fixed for paid/scheduled/deployed). Invented examples: "three saved searches", "check your

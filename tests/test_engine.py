@@ -1607,5 +1607,48 @@ class SavedNounUsesUIFeaturesAndStoredObjects(unittest.TestCase):
             "Wrote the report and saved it before lunch."))
 
 
+class DeletedNounUsesAndPhysicalCleanupIdioms(unittest.TestCase):
+    """Item 27, sixth direct-kind look ("deleted", third unchecked kind, 78
+    real-world flags per the 07:33 entry's lead; never checked directly
+    before this tick). Same adjective/noun-use shape already fixed for
+    paid/scheduled/deployed/saved: a UI feature name ("deleted messages",
+    "Recently Deleted folder") or a physical-space/idiomatic use of "cleaned
+    up" is not the assistant deleting data this turn. Invented examples
+    only; a genuine completed deletion or cleanup must still count."""
+
+    def _kinds(self, text):
+        return [c.kind for c in engine.extract_claims(text)]
+
+    def test_deleted_ui_feature_nouns_are_not_claims(self):
+        self.assertNotIn("deleted", self._kinds(
+            "Check the Recently Deleted folder for old backups."))
+        self.assertNotIn("deleted", self._kinds(
+            "Your deleted messages are kept for 30 days."))
+        self.assertNotIn("deleted", self._kinds(
+            "The deleted scenes are on the DVD extras."))
+        self.assertNotIn("deleted", self._kinds(
+            "Deleted conversations can be restored from the trash for a week."))
+
+    def test_cleaned_up_physical_and_idiomatic_uses_are_not_claims(self):
+        self.assertNotIn("deleted", self._kinds(
+            "He cleaned up nicely for the interview."))
+        self.assertNotIn("deleted", self._kinds(
+            "Cleaned up well after the long hike."))
+        self.assertNotIn("deleted", self._kinds(
+            "Cleaned up the kitchen before the guests arrived."))
+        self.assertNotIn("deleted", self._kinds(
+            "She cleaned up the garage over the weekend."))
+
+    def test_genuine_deleted_claims_still_count(self):
+        self.assertIn("deleted", self._kinds(
+            "Deleted the old backup files."))
+        self.assertIn("deleted", self._kinds(
+            "Removed the stale branch from the repo."))
+        self.assertIn("deleted", self._kinds(
+            "Cleaned up the temp directory."))
+        self.assertIn("deleted", self._kinds(
+            "Deleted the expired session tokens."))
+
+
 if __name__ == "__main__":
     unittest.main()
