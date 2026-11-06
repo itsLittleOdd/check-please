@@ -346,7 +346,15 @@ _THIRD_PARTY_PASSIVE = re.compile(r"\b(his|her|their)\b.{0,20}\b(was|were|is|are
 # an agentless status line with a third-party OBJECT after the verb ("Sent her the invoice.")
 # must still count: the pronoun there sits after the match, outside this window. A clause that
 # also carries a first-person word in that same window (e.g. "I pushed her fix") keeps the claim.
-_THIRD_PARTY_SUBJECT_WINDOW = re.compile(r"\b(he|she|they|him|his|her|hers|them|their|theirs)\b", _I)
+# Tick 8 extension (item 27, family (b) residual logged 2026-11-05 17:04): a third-party NOUN
+# subject ("the client pushed the hotfix") is the same shape as the pronoun case, just spelled
+# with a role noun instead of a pronoun. Closed, invented word list (not any noun before a verb,
+# which would be too broad); "the/a/an/our/their/his/her <role>" so a first-person possessive
+# ("our contractor") still voids correctly via the separate _FIRST_PERSON_WINDOW override below.
+_THIRD_PARTY_ROLE_NOUN = r"(client|customer|vendor|intern|contractor|supplier|teammate|colleague|coworker|co-worker|manager|support team|other team|other side)"
+_THIRD_PARTY_SUBJECT_WINDOW = re.compile(
+    r"\b(he|she|they|him|his|her|hers|them|their|theirs|"
+    r"(the|a|an|our|their|his|her)\s+" + _THIRD_PARTY_ROLE_NOUN + r")\b", _I)
 _FIRST_PERSON_WINDOW = re.compile(r"\b(i|i've|i'm|me|my|mine|we|we've|we're|us|our|ours)\b", _I)
 _QUESTION = re.compile(r"\?\s*$")
 _CODE_FENCE = re.compile(r"```.*?```", re.S)

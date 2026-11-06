@@ -273,6 +273,22 @@ class ExtractClaims(unittest.TestCase):
         self.assertEqual(self.kinds("I pushed her fix to the branch."), ["pushed"])
         self.assertEqual(self.kinds("We paid their outstanding balance in full."), ["paid"])
 
+    def test_third_party_noun_subject_before_verb_voided(self):
+        # WALL-BREAKER part (i), slice 4 (item 27, tick 8, family (b) residual logged
+        # 2026-11-05 17:04): the pronoun-only window guard missed a third-party NOUN subject
+        # ("the client pushed the hotfix"), the biggest remaining active-voice gap. Invented
+        # examples; checked against the same 40-char pre-match window as the pronoun guard.
+        self.assertEqual(self.kinds("The client pushed the hotfix before we noticed."), [])
+        self.assertEqual(self.kinds("The vendor deployed the patch overnight."), [])
+        self.assertEqual(self.kinds("An intern paid the invoice by mistake."), [])
+        self.assertEqual(self.kinds("The support team sent the email already."), [])
+
+    def test_third_party_noun_subject_with_first_person_in_window_still_counts(self):
+        # Same first-person override as the pronoun guard: the assistant acting on or with a
+        # third party's thing is still the assistant's own completed action.
+        self.assertEqual(self.kinds("I deployed the fix for the client."), ["deployed"])
+        self.assertEqual(self.kinds("We paid the vendor's outstanding invoice."), ["paid"])
+
     def test_partial_test_counts_are_not_a_tested_claim(self):
         # Item 40 cause (1), bench false alarms: a partial pass count is a status note, not a
         # "tests pass" claim, and must never become STALE or NOT BACKED by itself. Invented
