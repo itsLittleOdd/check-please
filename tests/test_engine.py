@@ -364,6 +364,58 @@ class CallSucceededRealResultShapes(unittest.TestCase):
             "error": "Delivery incomplete: 1 requested MEDIA attachment(s) dropped before delivery"}))
 
 
+class FailureResultDetection(unittest.TestCase):
+    """Item 38: a call that ran but failed must never back a claim, even when exit_code/
+    success/ok fields look clean, because the result's own text says otherwise. Invented
+    example shapes, same style as the surrounding dict-shape tests, not copied real output."""
+
+    def test_test_summary_with_failures_above_zero_in_a_clean_exit_code_result(self):
+        self.assertFalse(engine.call_succeeded(
+            {"output": "Ran 12 tests\n3 failed, 9 passed", "exit_code": 0, "error": None}))
+        self.assertFalse(engine.call_succeeded(
+            {"output": "FAILED (failures=2, errors=0)", "exit_code": 0, "error": None}))
+
+    def test_zero_failed_or_zero_errors_stays_a_pass(self):
+        # The explicit counter-case: "0 failed"/"0 errors" must never trip the new guard.
+        self.assertTrue(engine.call_succeeded(
+            {"output": "Ran 12 tests\n0 failed, 12 passed", "exit_code": 0, "error": None}))
+        self.assertTrue(engine.call_succeeded(
+            {"output": "OK (failures=0, errors=0)", "exit_code": 0, "error": None}))
+
+    def test_zero_passed_is_a_failure_signal(self):
+        self.assertFalse(engine.call_succeeded(
+            {"output": "0 passed, 0 failed, 1 skipped", "exit_code": 0, "error": None}))
+
+    def test_bare_failed_marker_with_clean_exit_code(self):
+        self.assertFalse(engine.call_succeeded({"output": "Build FAILED", "exit_code": 0, "error": None}))
+        # lowercase "failed" used as a plain adjective, no count attached, is left alone by
+        # this marker (the bare-word rule is deliberately uppercase-only, a stated limit).
+        self.assertTrue(engine.call_succeeded({"output": "the connection failed over to backup cleanly"}))
+
+    def test_no_such_file_marker(self):
+        self.assertFalse(engine.call_succeeded(
+            {"output": "deploy.sh: No such file or directory", "exit_code": 0, "error": None}))
+
+    def test_http_4xx_5xx_status_in_dict_fields(self):
+        self.assertFalse(engine.call_succeeded({"status_code": 404, "output": "Not Found"}))
+        self.assertFalse(engine.call_succeeded({"http_status": 500, "output": "Internal Server Error"}))
+        self.assertTrue(engine.call_succeeded({"status_code": 200, "output": "OK"}))
+
+    def test_http_4xx_5xx_status_in_plain_text_result(self):
+        self.assertFalse(engine.call_succeeded("HTTP/1.1 503 Service Unavailable\nRetry later"))
+
+    def test_clean_pass_output_with_no_markers_stays_a_pass(self):
+        self.assertTrue(engine.call_succeeded(
+            {"output": "Ran 18 tests in 0.4s\n\nOK", "exit_code": 0, "error": None}))
+
+    def test_classify_call_terminal_command_backs_nothing_when_output_says_failed(self):
+        # End-to-end through classify_call, not just call_succeeded directly.
+        result = engine.classify_call("terminal", {"command": "pytest -q"},
+                                       {"output": "2 failed, 8 passed", "exit_code": 0, "error": None})
+        self.assertEqual(result.kind, "tested")
+        self.assertFalse(result.ok)
+
+
 class ExtractClaims(unittest.TestCase):
     def kinds(self, text):
         return [c.kind for c in engine.extract_claims(text)]

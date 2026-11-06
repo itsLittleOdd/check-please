@@ -137,12 +137,27 @@ def call_succeeded(result: Any, status: Optional[str] = None) -> bool:
     if status and str(status).lower() in {"error", "blocked", "denied", "failed", "timeout", "cancelled"}:
         return False
     data = _as_dict(result)
+    # Item 38: a result's own text can say the call ran but failed (a test-summary count
+    # above zero, a bare FAILED marker, "No such file", an HTTP 4xx/5xx status) even when
+    # the call's own success/ok/exit_code fields look fine on this one host's tool shape.
+    # Checked before everything else so these markers are never shadowed by a dict branch
+    # that would otherwise return True early on a zero/missing exit_code.
+    text_blob = _result_text_blob(data) if data else str(result or "")
+    if _has_failure_marker(text_blob):
+        return False
     if data:
         if data.get("success") is False or data.get("ok") is False:
             return False
         err = data.get("error")
         if err not in (None, "", False, [], {}):
             return False
+        http_status = data.get("status_code", data.get("http_status"))
+        if http_status is not None:
+            try:
+                if 400 <= int(http_status) < 600:
+                    return False
+            except (TypeError, ValueError):
+                pass
         code = data.get("exit_code", data.get("returncode", data.get("exitCode")))
         if code is not None:
             try:
@@ -152,10 +167,43 @@ def call_succeeded(result: Any, status: Optional[str] = None) -> bool:
         if str(data.get("status", "")).lower() in {"error", "failed", "blocked", "denied"}:
             return False
         return True
-    text = str(result or "")
-    if re.search(r"\b(traceback|error:|permission denied|command not found|exit code [1-9])", text, _I):
-        return False
     return True
+
+
+# Item 38 (failure-result detection): markers in a call's own output text that a human
+# would read as "it ran, but it failed", so such a call must never back a claim even when
+# exit_code/success/ok look clean. Scoped to never-regress the explicit counter-case: a
+# pass summary that says "0 failed"/"0 errors" must stay a pass (both count patterns
+# require a leading 1-9 digit, so a leading 0 never matches).
+_FAILURE_COUNT = re.compile(r"\b[1-9]\d*\s*(?:failed|failures?|errors?)\b", _I)
+_FAILURE_EQ = re.compile(r"\b(?:failures?|errors?)\s*=\s*[1-9]\d*\b", _I)
+_ZERO_PASSED = re.compile(r"\b0\s+(?:tests?\s+)?passed\b", _I)
+_BARE_FAILED_MARKER = re.compile(r"(?<![A-Za-z0-9])FAILED(?![A-Za-z0-9])")
+_RESULT_FAILURE_TEXT = re.compile(
+    r"\btraceback\b|\berror:|\bpermission denied\b|\bcommand not found\b|\bexit code [1-9]|\bno such file\b", _I)
+_HTTP_ERROR_STATUS = re.compile(r"\bhttp/\d(?:\.\d)?\"?\s+([45]\d{2})\b", _I)
+
+_RESULT_TEXT_KEYS = ("output", "stdout", "stderr", "message", "body", "text", "content")
+
+
+def _result_text_blob(data: dict) -> str:
+    """Join the result dict's own text fields for marker scanning; falls back to str(data)
+    when none of the known keys hold a string, so an unexpected shape is still scanned."""
+    parts = [v for k in _RESULT_TEXT_KEYS if isinstance((v := data.get(k)), str) and v]
+    return "\n".join(parts) if parts else str(data)
+
+
+def _has_failure_marker(text: str) -> bool:
+    if not text:
+        return False
+    return bool(
+        _RESULT_FAILURE_TEXT.search(text)
+        or _FAILURE_COUNT.search(text)
+        or _FAILURE_EQ.search(text)
+        or _ZERO_PASSED.search(text)
+        or _BARE_FAILED_MARKER.search(text)
+        or _HTTP_ERROR_STATUS.search(text)
+    )
 
 
 # Real Hermes tool names (verified in ~/.hermes/hermes-agent/tools, read-only, 2026-11-05):
