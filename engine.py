@@ -240,6 +240,31 @@ def _earliest_chain_kind(cmd: str) -> Optional[str]:
     return kinds[0]
 
 
+def _semicolon_kind_is_ambiguous(cmd: str, kind: Optional[str]) -> bool:
+    """Item 40 cause (3), the `;` case. Unlike `&&`, every `;`-joined sub-command runs no
+    matter what the previous one did, so an earlier stage's own success or failure is
+    independent of a later stage's and of the call's overall exit code. `_scan_ladder`'s
+    whole-text scan picks a kind by PRIORITY order (paid outranks pushed, for example), not
+    by position, so on a chain like `stripe charge the card; deploy_prod.sh` (invented) the
+    globally-picked kind is \"paid\" even though \"deployed\" is the LAST sub-command, the one
+    whose own exit status plausibly drives the overall `ok`. When the globally-picked kind
+    does not match the chain's own last sub-command, trusting the overall `ok` for it is a
+    guess in either direction (it may have already succeeded before an unrelated later stage
+    failed, exactly like the `&&` case, but we cannot prove that the way `&&` guarantees it) --
+    \"when unsure, do not mark FAILED\" cuts here too, as no evidence rather than a verdict.
+    When the globally-picked kind IS the last sub-command's own kind, there is no ambiguity:
+    that stage's exit status is what the overall result almost certainly reflects, same as an
+    unchained command, so this returns False (trust `ok` as normal).
+    """
+    parts = cmd.split(";")
+    if len(parts) < 2:
+        return False
+    part_kinds = [_scan_ladder(part) for part in parts]
+    if len([k for k in part_kinds if k]) < 2:
+        return False
+    return part_kinds[-1] != kind
+
+
 def classify_call(tool_name: str, args: Any, result: Any = None, status: Optional[str] = None,
                   seq: int = 0, ts: float = 0.0) -> Optional[Evidence]:
     """Return the evidence a tool call provides, or None when it proves nothing on the ladder."""
@@ -263,6 +288,8 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
             earliest = _earliest_chain_kind(cmd)
             if earliest:
                 return Evidence(earliest, True, name, short, seq, ts)
+        if not ok and ";" in cmd and "&&" not in cmd and _semicolon_kind_is_ambiguous(cmd, kind):
+            return None
         return Evidence(kind, ok, name, short, seq, ts) if kind else None
 
     if low in _CODE_TEXT_TOOLS:

@@ -183,11 +183,39 @@ class ChainedShellCommands(unittest.TestCase):
         self.assertEqual(e.kind, "committed")
         self.assertTrue(e.ok)
 
-    def test_semicolon_chains_are_an_untouched_gap(self):
-        """Honest limit, logged not fixed: this slice is scoped to `&&` only. A `;`-joined
-        chain falls through to the old whole-text scan, so a later failed stage still reads
-        as a failed EARLIER stage too, same as before this item."""
+    def test_semicolon_chain_unambiguous_last_stage_still_reports_as_failed(self):
+        """`;` fix (item 40 cause 3, the `;` case): when the globally-picked kind IS the
+        chain's own last sub-command (git push really is the last thing that ran and really
+        is what failed), there is no ambiguity, so this is unchanged from before the fix."""
         e = ev("terminal", {"command": "git commit -m x; git push"}, {"exit_code": 1})
+        self.assertEqual(e.kind, "pushed")
+        self.assertFalse(e.ok)
+
+    def test_semicolon_chain_ambiguous_priority_mismatch_is_no_evidence(self):
+        """The bug this tick fixes: `_scan_ladder`'s priority order picks \"paid\" from the
+        FIRST sub-command even though \"deployed\" is the chain's actual LAST sub-command
+        (invented: a payment call, then an unrelated deploy that failed). The paid stage may
+        well have already succeeded; we cannot prove that the way `&&` guarantees it, so this
+        is no evidence at all, never a guessed FAILED verdict."""
+        e = ev("terminal",
+               {"command": "stripe charge the card; netlify deploy --prod"},
+               {"exit_code": 1})
+        self.assertIsNone(e)
+
+    def test_semicolon_chain_single_matched_stage_is_unaffected(self):
+        """Only one sub-command has a recognizable kind (`echo` has none): not the
+        two-or-more-stage ambiguous shape, so the normal verdict still applies."""
+        e = ev("terminal", {"command": "echo starting; git push"}, {"exit_code": 1})
+        self.assertEqual(e.kind, "pushed")
+        self.assertFalse(e.ok)
+
+    def test_double_pipe_chains_are_an_untouched_gap(self):
+        """Honest limit, logged not fixed: `||` has asymmetric semantics from both `&&` and
+        `;` (the second side only runs if the first FAILED, and if the whole thing still
+        fails, both sides failed; if it succeeds, either side could be the one that actually
+        ran), so copying either existing fix would be a guess, not a proof. Needs its own
+        design pass, not attempted this tick."""
+        e = ev("terminal", {"command": "git push || git push --force"}, {"exit_code": 1})
         self.assertEqual(e.kind, "pushed")
         self.assertFalse(e.ok)
 
