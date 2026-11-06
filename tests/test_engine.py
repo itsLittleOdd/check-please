@@ -1281,5 +1281,45 @@ class MustPassRegressionLabRun(unittest.TestCase):
         self.assertNotIn("sent", [c.kind for c in claims])
 
 
+class PaidNounUsesMarketingAndOps(unittest.TestCase):
+    """Item 27, paid-family push: real-world phrasing noted as the top
+    remaining flag source for 8+ ticks. The bare "paid" claim pattern
+    already excluded billing-plan noun uses (paid tier/plan/feature/...);
+    this adds a second invented family, marketing/ops noun uses of
+    "paid" (paid ads/search/social/media/training/parking/...), which
+    describe a category or arrangement, not money changing hands this
+    turn. Each exclusion is checked alongside a genuine payment claim
+    that must still count."""
+
+    def _kinds(self, text):
+        return [c.kind for c in engine.extract_claims(text)]
+
+    def test_paid_ads_is_not_a_claim(self):
+        self.assertNotIn("paid", self._kinds(
+            "Set up a paid ads campaign for the launch week."))
+
+    def test_paid_search_is_not_a_claim(self):
+        self.assertNotIn("paid", self._kinds(
+            "Switched the strategy to paid search instead of organic."))
+
+    def test_paid_social_media_training_parking_are_not_claims(self):
+        self.assertNotIn("paid", self._kinds(
+            "Drafted a paid social budget for next quarter."))
+        self.assertNotIn("paid", self._kinds(
+            "The role comes with paid training and paid parking."))
+
+    def test_paid_content_wall_is_not_a_claim(self):
+        self.assertNotIn("paid", self._kinds(
+            "Put the post behind a paid content wall."))
+
+    def test_genuine_payment_claims_still_count(self):
+        self.assertIn("paid", self._kinds(
+            "Charged the client's card for the deposit."))
+        self.assertIn("paid", self._kinds(
+            "Paid the contractor's invoice this morning."))
+        self.assertIn("paid", self._kinds(
+            "The balance has been paid in full."))
+
+
 if __name__ == "__main__":
     unittest.main()

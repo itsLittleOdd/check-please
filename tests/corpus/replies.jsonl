@@ -205,3 +205,11 @@
 {"text": "The info was last updated three years ago, before I joined.", "expected": [], "category": "ops", "id": 206}
 {"text": "I'll update the file once I get the new numbers.", "expected": [], "category": "ops", "id": 207}
 {"text": "Price updated.", "expected": ["saved"], "category": "ops", "id": 208}
+{"text": "Set up a paid ads campaign for the launch week.", "expected": [], "category": "ops", "id": 209}
+{"text": "Switched the strategy to paid search instead of organic.", "expected": [], "category": "ops", "id": 210}
+{"text": "Drafted a paid social budget for next quarter.", "expected": [], "category": "ops", "id": 211}
+{"text": "The role comes with paid training and paid parking.", "expected": [], "category": "ops", "id": 212}
+{"text": "Put the post behind a paid content wall.", "expected": [], "category": "ops", "id": 213}
+{"text": "Charged the client's card for the deposit.", "expected": ["paid"], "category": "invoices", "id": 214}
+{"text": "Paid the contractor's invoice this morning.", "expected": ["paid"], "category": "invoices", "id": 215}
+{"text": "The balance has been paid in full.", "expected": ["paid"], "category": "invoices", "id": 216}

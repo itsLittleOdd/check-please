@@ -323,7 +323,8 @@ class Claim:
 
 # (rung, pattern). Past tense / completed state only.
 _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p in [
-    ("paid", r"\b(paid(?!\s+(attention|off|vacation|leave|time off|internship|plan|tier|feature|version|subscription|account|add[- ]on|service))|"
+    ("paid", r"\b(paid(?!\s+(attention|off|vacation|leave|time off|internship|plan|tier|feature|version|subscription|account|add[- ]on|service|"
+             r"ads?|media|social|search|campaign|placement|promotions?|partnership|membership|content|traffic|downloads?|overtime|training|parking|positions?|wall))|"
              r"charged (the |your |his |her |their |an? )?(card|customer|client|account|deposit|rent|fee|balance)\b|charged \$\d+|"
              r"payment (went through|succeeded|processed|collected)|"
              r"collected (the |an? )?(deposit|payment|rent|fee)|"
