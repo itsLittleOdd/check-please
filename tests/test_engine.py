@@ -2748,5 +2748,56 @@ class MailSendToolByPath(unittest.TestCase):
         self.assertEqual(v[0].status, "EDITED")
 
 
+class CronGuardLine(unittest.TestCase):
+    """Backlog item 32: one line naming the worst inline-worthy claim, for the TOP of an
+    unattended cron reply."""
+
+    def test_empty_when_nothing_inline_worthy(self):
+        # A plain NOT_BACKED claim is not inline-worthy by default (item 41 receipts policy).
+        v = engine.check_turn("I've sent the invoice to Dana.", [])
+        self.assertEqual(engine.cron_guard_line(v), "")
+
+    def test_empty_on_no_verdicts(self):
+        self.assertEqual(engine.cron_guard_line([]), "")
+
+    def test_names_the_stale_claim_singular(self):
+        evidence = [
+            ev("terminal", {"command": "pytest -q"}, seq=1),
+            ev("write_file", {"path": "pricing.py"}, seq=2),
+        ]
+        v = engine.check_turn("Tests pass.", evidence)
+        line = engine.cron_guard_line(v)
+        self.assertTrue(line.startswith("Check, Please: 1 claim not backed: "))
+        self.assertIn("Tests pass", line)
+
+    def test_counts_multiple_inline_worthy_claims_plural(self):
+        evidence = [
+            ev("terminal", {"command": "pytest -q"}, seq=1),
+            ev("write_file", {"path": "pricing.py"}, seq=2),
+            ev("terminal", {"command": "./deploy.sh"}, {"exit_code": 1}, seq=3),
+        ]
+        v = engine.check_turn("Tests pass. Deployed it.", evidence)
+        line = engine.cron_guard_line(v)
+        self.assertTrue(line.startswith("Check, Please: 2 claims not backed: "))
+
+    def test_inline_unbacked_true_can_surface_a_plain_not_backed_claim(self):
+        v = engine.check_turn("I've sent the invoice to Dana.", [])
+        self.assertEqual(engine.cron_guard_line(v, inline_unbacked=False), "")
+        line = engine.cron_guard_line(v, inline_unbacked=True)
+        self.assertTrue(line.startswith("Check, Please: 1 claim not backed: "))
+        self.assertIn("no sent call this turn", line)
+
+    def test_prefers_a_stale_or_failed_claim_as_the_named_worst(self):
+        evidence = [
+            ev("terminal", {"command": "pytest -q"}, seq=1),
+            ev("write_file", {"path": "pricing.py"}, seq=2),
+        ]
+        # One STALE (tested) claim plus, with inline_unbacked on, a plain NOT_BACKED (sent)
+        # claim; the STALE claim is the one named, not whichever comes first in the reply.
+        v = engine.check_turn("I've sent the update. Tests pass.", evidence)
+        line = engine.cron_guard_line(v, inline_unbacked=True)
+        self.assertIn("Tests pass", line)
+
+
 if __name__ == "__main__":
     unittest.main()

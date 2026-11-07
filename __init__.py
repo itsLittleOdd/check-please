@@ -458,12 +458,20 @@ def on_transform_llm_output(response_text: str = "", session_id: Any = None, **k
         # claim is never masked as freshly backed by an old pass.
         verdicts = engine.apply_session_evidence(verdicts, _load_session_evidence(sid))
         run = _current_cron()
+        cron_guard_text = ""
         if run is not None and verdicts:
             with _LOCK:
                 tally = _load_cron_tally()
                 job_id = str(run.job_id)
                 engine.tally_cron_job(tally, job_id, str(run.job_name), verdicts)
                 _save_cron_tally(tally, keep=job_id)
+            # Item 32 (cron honesty guard): an unattended run gets its worst inline-worthy
+            # claim named at the TOP of the delivered reply, not just tallied for later.
+            # A reply that is exactly the silent-suppression token or empty is never altered
+            # (nothing is delivered to prepend onto, and a literal [SILENT] must stay exact
+            # so the cron runner still suppresses delivery).
+            if bool(_settings.get("cron_guard", True)) and (response_text or "").strip() not in ("", "[SILENT]"):
+                cron_guard_text = engine.cron_guard_line(verdicts, bool(_settings.get("inline_unbacked", False)))
         if verdicts:
             with _LOCK:
                 daily = _load_daily()
@@ -476,17 +484,26 @@ def on_transform_llm_output(response_text: str = "", session_id: Any = None, **k
             _LAST_SESSION[0] = sid
         _save_last_reply(sid, engine.claims_payload(verdicts))
         if mode == "off":
+            bottom_line = ""
+        elif not verdicts and not subagent_verdicts:
+            bottom_line = ""
+        else:
+            inline_unbacked = bool(_settings.get("inline_unbacked", False))
+            if mode == "issues" and not any(
+                    engine.inline_worthy(v, inline_unbacked) for v in verdicts) and not any(
+                    engine.inline_worthy(v, inline_unbacked) for v in subagent_verdicts):
+                bottom_line = ""
+            else:
+                bottom_line = engine.summary_line(verdicts, inline_unbacked)
+                bottom_line = engine.append_subagent_note(bottom_line, subagent_verdicts, inline_unbacked)
+        if not cron_guard_text and not bottom_line:
             return None
-        if not verdicts and not subagent_verdicts:
-            return None
-        inline_unbacked = bool(_settings.get("inline_unbacked", False))
-        if mode == "issues" and not any(
-                engine.inline_worthy(v, inline_unbacked) for v in verdicts) and not any(
-                engine.inline_worthy(v, inline_unbacked) for v in subagent_verdicts):
-            return None
-        line = engine.summary_line(verdicts, inline_unbacked)
-        line = engine.append_subagent_note(line, subagent_verdicts, inline_unbacked)
-        return f"{response_text.rstrip()}\n\n{line}" if line else None
+        text = response_text.rstrip()
+        if cron_guard_text:
+            text = f"{cron_guard_text}\n\n{text}"
+        if bottom_line:
+            text = f"{text}\n\n{bottom_line}"
+        return text
     except Exception:
         logger.debug("check-please transform failed", exc_info=True)
         return None
@@ -571,6 +588,10 @@ def register(ctx) -> None:
         pass
     try:
         _settings["inline_unbacked"] = ctx.get_config("inline_unbacked", default=False)
+    except Exception:
+        pass
+    try:
+        _settings["cron_guard"] = ctx.get_config("cron_guard", default=True)
     except Exception:
         pass
     ctx.register_hook("pre_llm_call", on_pre_llm_call)

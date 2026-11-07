@@ -1401,6 +1401,22 @@ def summary_line(verdicts: list[Verdict], inline_unbacked: bool = False) -> str:
     return f"Check: {', '.join(parts)}.{tail} /check for detail."
 
 
+def cron_guard_line(verdicts: list[Verdict], inline_unbacked: bool = False) -> str:
+    """Backlog item 32 (cron honesty guard): one line for the TOP of an unattended cron
+    reply, naming the worst inline-worthy claim first so a human skimming a cron digest
+    sees the issue before anything else. Empty string when nothing inline-worthy exists,
+    so the caller can skip entirely rather than prepending blank text. Uses the same
+    inline-worthy rule as summary_line/the Check line (STALE/FAILED/EDITED always count,
+    NOT_BACKED only with inline_unbacked), so the two never disagree about what counts."""
+    worthy = [v for v in verdicts if inline_worthy(v, inline_unbacked)]
+    if not worthy:
+        return ""
+    n = len(worthy)
+    worst = next((v for v in worthy if v.status in {"FAILED", "STALE", "EDITED"}), worthy[0])
+    claim_noun = "claim" if n == 1 else "claims"
+    return f"Check, Please: {n} {claim_noun} not backed: {worst.claim.phrase} ({worst.note})."
+
+
 def apply_cross_turn_stale(verdicts: list[Verdict], edited_since_pass: bool, note: str = "") -> list[Verdict]:
     """Upgrade NOT_BACKED "tested" claims to STALE when the caller already knows (from state
     kept across turns, outside this function) that tests last passed in an earlier turn and the

@@ -317,6 +317,88 @@ class RealHookHarnessTest(unittest.TestCase):
         self.assertIn("1 subagent claim not backed", transformed,
                        "a child's own contradicted claim never reached the parent's check line")
 
+    def test_cron_guard_puts_the_stale_claim_at_the_top_of_an_unattended_reply(self):
+        """Backlog item 32: on a real, faked cron-execution context, a same-turn STALE claim
+        gets a 'Check, Please: ...' line prepended to the TOP of the delivered reply, not just
+        appended at the bottom like the normal Check line. Faked via the installed Hermes
+        checkout's own cron.execution_identity module (enter/exit_cron_execution), the exact
+        contextvar ctx.current_cron_execution() reads, not a stub double."""
+        try:
+            sys.path.insert(0, str(HERMES_AGENT_HOME))
+            import importlib
+            execution_identity = importlib.import_module("cron.execution_identity")
+        except Exception as exc:
+            self.skipTest(f"cron.execution_identity not importable: {exc}")
+
+        manager = self.plugins.get_plugin_manager()
+        manager.discover_and_load(force=True)
+        session_id = "sess-real-hook-8"
+
+        token = execution_identity.enter_cron_execution(
+            {"id": "job-nightly-qa", "name": "Nightly QA"},
+            "exec-1",
+            {"source": "builtin", "scheduled_instant": None, "started_at": None},
+        )
+        try:
+            manager.invoke_hook("pre_llm_call", session_id=session_id, turn_id="turn-1")
+            manager.invoke_hook(
+                "post_tool_call", tool_name="terminal", args={"command": "pytest -q"},
+                result={"exit_code": 0, "output": "OK"}, status="success", session_id=session_id,
+            )
+            manager.invoke_hook(
+                "post_tool_call", tool_name="write_file", args={"path": "pricing.py"},
+                result={"error": None}, status="success", session_id=session_id,
+            )
+            results = manager.invoke_hook(
+                "transform_llm_output", response_text="Tests pass.", session_id=session_id,
+            )
+        finally:
+            execution_identity.exit_cron_execution(token)
+        transformed = next((r for r in results if isinstance(r, str)), "")
+        self.assertTrue(transformed.startswith("Check, Please: 1 claim not backed: "),
+                         f"cron guard line did not land at the top of the reply: {transformed!r}")
+        self.assertIn("Tests pass.", transformed, "the original reply text was dropped, not just prepended to")
+        self.assertIn("1 stale", transformed, "the normal bottom Check line should still be present too")
+
+    def test_cron_guard_never_alters_an_exact_silent_token(self):
+        """Backlog item 32's own guard rail: a reply that is exactly the literal [SILENT]
+        suppression token must never be touched, even inside a faked cron execution with a
+        stale claim sitting in this turn's ledger, or the cron runner's own silent-on-green
+        convention would break."""
+        try:
+            sys.path.insert(0, str(HERMES_AGENT_HOME))
+            import importlib
+            execution_identity = importlib.import_module("cron.execution_identity")
+        except Exception as exc:
+            self.skipTest(f"cron.execution_identity not importable: {exc}")
+
+        manager = self.plugins.get_plugin_manager()
+        manager.discover_and_load(force=True)
+        session_id = "sess-real-hook-9"
+
+        token = execution_identity.enter_cron_execution(
+            {"id": "job-silent-qa", "name": "Silent QA"},
+            "exec-2",
+            {"source": "builtin", "scheduled_instant": None, "started_at": None},
+        )
+        try:
+            manager.invoke_hook("pre_llm_call", session_id=session_id, turn_id="turn-1")
+            manager.invoke_hook(
+                "post_tool_call", tool_name="terminal", args={"command": "pytest -q"},
+                result={"exit_code": 0, "output": "OK"}, status="success", session_id=session_id,
+            )
+            manager.invoke_hook(
+                "post_tool_call", tool_name="write_file", args={"path": "pricing.py"},
+                result={"error": None}, status="success", session_id=session_id,
+            )
+            results = manager.invoke_hook(
+                "transform_llm_output", response_text="[SILENT]", session_id=session_id,
+            )
+        finally:
+            execution_identity.exit_cron_execution(token)
+        transformed = next((r for r in results if isinstance(r, str)), "")
+        self.assertEqual(transformed, "", "the [SILENT] token was altered; cron suppression would break")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -41,3 +41,8 @@ config_schema:
     default: false
     label: Show not-backed claims inline
     description: "Off by default: a not-backed claim means no receipt was found, not a proven contradiction, so it only shows in /check and the Desktop pane. Set true to also interrupt the reply itself for the higher-stakes kinds (sent, paid, deployed, pushed, deleted, scheduled), the old behavior. Stale and failed claims always interrupt the reply either way."
+  cron_guard:
+    type: bool
+    default: true
+    label: Cron honesty guard
+    description: "On an unattended cron run, put the worst inline-worthy claim (stale, failed, proof edited, or not-backed when that is also shown inline) at the TOP of the delivered reply, one line, so a human skimming a digest sees it first. Never alters a reply that is exactly the empty string or the literal [SILENT] suppression token. Set false to disable."
