@@ -1752,6 +1752,22 @@ class PluginHooks(unittest.TestCase):
         detail = m.handle_check("", session_id="s2")
         self.assertIn("earlier this session", detail)
 
+    def test_silent_reply_never_touched_even_with_subagent_and_stale(self):
+        """Item 45: a [SILENT] cron reply must stay exactly [SILENT] (or empty stays empty)."""
+        m = self.mod
+        m.on_pre_llm_call(session_id="s45", turn_id="t1")
+        m.on_post_tool_call(tool_name="terminal", args={"command": "python3 -m unittest -q"},
+                            result={"output": "OK", "exit_code": 0}, session_id="s45")
+        m.on_post_tool_call(tool_name="patch", args={"path": "app/pricing.py"}, result={"success": True},
+                            session_id="s45")
+        with m._LOCK:
+            m._LEDGER.setdefault(m._session("s45"), {})["subagent_verdicts"] = [object()]
+        self.assertIsNone(m.on_transform_llm_output(response_text="[SILENT]", session_id="s45"))
+        self.assertIsNone(m.on_transform_llm_output(response_text="  [SILENT]\n", session_id="s45"))
+        self.assertIsNone(m.on_transform_llm_output(response_text="", session_id="s45"))
+        self.assertIsNone(m.on_pre_verify(session_id="s45", coding=True, attempt=0,
+                                          final_response="[SILENT]", changed_paths=["app/pricing.py"]))
+
     def test_hooks_never_raise(self):
         m = self.mod
         self.assertIsNone(m.on_post_tool_call(tool_name=None, args="garbage{", result=object()))

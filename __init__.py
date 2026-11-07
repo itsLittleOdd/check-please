@@ -438,9 +438,19 @@ def on_subagent_stop(parent_session_id: Any = None, child_session_id: Any = None
     return None
 
 
+def _is_silent(text: Any) -> bool:
+    """Item 45: an empty reply or one starting with the cron suppression token is never
+    touched. Cron delivery is skipped on "[SILENT]"; any added text would turn a silent run
+    into a delivered message."""
+    t = (text or "").strip() if isinstance(text, str) else ""
+    return not t or t.startswith("[SILENT]")
+
+
 def on_transform_llm_output(response_text: str = "", session_id: Any = None, **kwargs: Any):
     """Return the reply with a check line appended, or None to leave it untouched."""
     try:
+        if _is_silent(response_text):
+            return None
         mode = str(_settings.get("line") or "all").lower()
         sid = _session(session_id)
         with _LOCK:
@@ -519,7 +529,7 @@ def on_pre_verify(session_id: Any = None, coding: bool = False, attempt: int = 0
     9's generic 'rerun tests' nudge only fires when item 30 found nothing to catch, so the two
     never double-nudge in one turn. Each is off entirely when its own config is disabled."""
     try:
-        if attempt or not coding:
+        if attempt or not coding or _is_silent(final_response):
             return None
         sid = _session(session_id)
         rec = _cross_record(sid)
