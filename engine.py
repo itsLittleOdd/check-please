@@ -71,11 +71,48 @@ class Evidence:
                                # found, a missing Python module, exit code 127), not a real test
                                # or check failure. _find_edited_proof must never treat this as
                                # "the earlier failure" a later edit explains away.
+    narrow_scope: str = ""     # item 44 (PARTIAL SUITE): set on "tested" evidence when the
+                               # command only ran a single test file/module, -k expr, node id
+                               # (::name) or --grep filter, never the whole suite. Empty for a
+                               # whole-suite run or any non-"tested" evidence.
 
 
 _TEST_CMD = re.compile(
     r"\b(pytest|py\.test|python3?\s+-m\s+(pytest|unittest)|npm\s+(run\s+)?test|pnpm\s+(run\s+)?test|yarn\s+test|"
     r"bun\s+test|go\s+test|cargo\s+test|jest|vitest|mocha|rspec|phpunit|make\s+(test|check)|tox|nox|ctest)\b", _I)
+# Item 44 (PARTIAL SUITE): a test command that only runs a single file/module, a -k filter, a
+# node id (tests/test_x.py::test_y) or a --grep/-t name filter proves less than "all tests" or
+# "the suite". Matched on the command text only (never claim text). A bare `pytest`, `pytest
+# tests/` (a directory, no file extension) or `python3 -m unittest discover` is a whole-suite
+# run and must NOT match here.
+_TARGETED_TEST_SCOPE = re.compile(
+    r"(-k\s*=?\s*['\"]?[\w.*]+['\"]?)|"
+    r"(::[\w:.\[\]-]+)|"
+    r"(--grep[= ]\s*['\"]?[^'\"\n]+['\"]?)|"
+    r"(-t\s+['\"][^'\"\n]+['\"])|"
+    r"(\btests?/[\w./-]+\.(py|js|ts|rb|go)\b)|"
+    r"(\bunittest\s+([\w.]+\.[\w.]+))", _I)
+
+
+def _targeted_test_scope(cmd: str) -> str:
+    """The matched targeted-run token, or "" when the command looks like a whole-suite run."""
+    m = _TARGETED_TEST_SCOPE.search(cmd)
+    return m.group(0).strip() if m else ""
+
+
+# Words that keep a "<word> tests" phrase a generic whole-suite claim, not a named subset.
+# Anything else immediately before "test(s)" (e.g. "the pricing tests pass", "the users tests
+# pass") names its own subset and must stay BACKED even when the evidence only ran that subset.
+_SUBSET_STOPWORDS = {"all", "every", "no", "the", "my", "our", "these", "those", "a", "an",
+                     "both", "its", "their", "unit", "integration", "regression", "end", "to"}
+_NAMED_SUBSET_WORD = re.compile(r"\b([a-zA-Z][\w-]*)\s+tests?\b", _I)
+
+
+def _claims_named_subset(text: str) -> bool:
+    for m in _NAMED_SUBSET_WORD.finditer(text or ""):
+        if m.group(1).lower() not in _SUBSET_STOPWORDS:
+            return True
+    return False
 # Real checks we don't otherwise recognize as test evidence (item 27 family (e)): a script or
 # flag whose own name says it's a check, not a fixed test-runner name. Scoped to command/code
 # text only (never claim text), so a false match here just over-credits evidence, which is the
@@ -700,7 +737,9 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
         if not ok and "|" in cmd and "&&" not in cmd and ";" not in cmd and "||" not in cmd \
                 and _single_pipe_kind_is_ambiguous(cmd, kind):
             return None
-        return Evidence(kind, ok, name, short, seq, ts, reason, env_error=env_error) if kind else None
+        narrow = _targeted_test_scope(cmd) if kind == "tested" else ""
+        return Evidence(kind, ok, name, short, seq, ts, reason, env_error=env_error,
+                         narrow_scope=narrow) if kind else None
 
     if low in _CODE_TEXT_TOOLS:
         # execute_code runs Python directly; browser_exec runs Python against browser helpers.
@@ -1369,7 +1408,7 @@ def extract_claims(reply: str) -> list[Claim]:
 @dataclass
 class Verdict:
     claim: Claim
-    status: str                       # BACKED | STALE | FAILED | NOT_BACKED | EDITED
+    status: str                       # BACKED | STALE | FAILED | NOT_BACKED | EDITED | PARTIAL
     proof: Optional[Evidence] = None
     proven_rung: Optional[str] = None  # highest rung actually proven this turn
     note: str = ""
@@ -1453,7 +1492,21 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
                         verdicts.append(Verdict(claim, "EDITED", latest, rung,
                                                 f"{claim.kind} passed only after {proof_name} was edited"))
                 else:
-                    verdicts.append(Verdict(claim, "BACKED", latest, rung))
+                    # Item 44 (PARTIAL SUITE), tick 2 narrower condition: a whole-suite claim
+                    # backed only by a targeted run is PARTIAL only when this SAME turn also
+                    # ran a different "tested" call EARLIER that failed (the item-43-shaped
+                    # "narrow the test to make it pass" pattern). A clean single-shot run of
+                    # one test file, with no earlier failure this turn, is a plausible honest
+                    # whole-relevant-check in a small session and stays BACKED; tick 1's wider
+                    # rule flagged that case too and caused a real frontier false-alarm
+                    # regression (see PROGRESS.md 2026-11-06 21:06), reverted here.
+                    earlier_failed_tested = any(e.seq < latest.seq and not e.ok for e in backers)
+                    if (latest.narrow_scope and not _claims_named_subset(claim.text)
+                            and earlier_failed_tested):
+                        verdicts.append(Verdict(claim, "PARTIAL", latest, rung,
+                                                f"only {latest.narrow_scope} ran"))
+                    else:
+                        verdicts.append(Verdict(claim, "BACKED", latest, rung))
             else:
                 reason = latest.reason or _GENERIC_FAILURE_REASON
                 note = reason if reason == _GENERIC_FAILURE_REASON else f"{claim.kind} call {reason}"
@@ -1507,7 +1560,7 @@ def summary_line(verdicts: list[Verdict], inline_unbacked: bool = False) -> str:
     STALE and FAILED counts are unaffected by this setting."""
     if not verdicts:
         return ""
-    counts = {"BACKED": 0, "STALE": 0, "FAILED": 0, "NOT_BACKED": 0, "EDITED": 0}
+    counts = {"BACKED": 0, "STALE": 0, "FAILED": 0, "NOT_BACKED": 0, "EDITED": 0, "PARTIAL": 0}
     for v in verdicts:
         if v.status == "NOT_BACKED" and not inline_worthy(v, inline_unbacked):
             continue  # no receipt: listed in /check and the Desktop pane, never inline
@@ -1521,12 +1574,14 @@ def summary_line(verdicts: list[Verdict], inline_unbacked: bool = False) -> str:
         parts.append(f"{counts['FAILED']} failed")
     if counts["EDITED"]:
         parts.append(f"{counts['EDITED']} proof edited")
+    if counts["PARTIAL"]:
+        parts.append(f"{counts['PARTIAL']} partial run")
     if counts["NOT_BACKED"]:
         parts.append(f"{counts['NOT_BACKED']} not backed")
     if not parts:
         return ""
     worst = next((v for v in verdicts
-                   if v.status in {"FAILED", "STALE", "EDITED"}
+                   if v.status in {"FAILED", "STALE", "EDITED", "PARTIAL"}
                    or (v.status == "NOT_BACKED" and inline_worthy(v, inline_unbacked))), None)
     tail = f" First issue: \"{worst.claim.phrase}\" ({worst.note})." if worst else ""
     return f"Check: {', '.join(parts)}.{tail} /check for detail."
@@ -1543,7 +1598,7 @@ def cron_guard_line(verdicts: list[Verdict], inline_unbacked: bool = False) -> s
     if not worthy:
         return ""
     n = len(worthy)
-    worst = next((v for v in worthy if v.status in {"FAILED", "STALE", "EDITED"}), worthy[0])
+    worst = next((v for v in worthy if v.status in {"FAILED", "STALE", "EDITED", "PARTIAL"}), worthy[0])
     claim_noun = "claim" if n == 1 else "claims"
     return f"Check, Please: {n} {claim_noun} not backed: {worst.claim.phrase} ({worst.note})."
 
@@ -1645,8 +1700,10 @@ def tally_day(day: dict, verdicts: list[Verdict], max_issues: int = 30) -> dict:
         day.setdefault(key, 0)
     issues = day.setdefault("issues", [])
     status_key = {"STALE": "stale", "FAILED": "failed", "NOT_BACKED": "not_backed",
-                  "EDITED": "failed"}  # item 43: counted under "failed" (contradicted evidence,
+                  "EDITED": "failed",  # item 43: counted under "failed" (contradicted evidence,
                                        # same bucket as a failing re-run, not a silent gap)
+                  "PARTIAL": "stale"}  # item 44: counted under "stale" (incomplete evidence
+                                       # for the full claim, not a contradiction or a gap)
     for v in verdicts:
         day["claims"] += 1
         if v.status == "BACKED":
@@ -1733,7 +1790,8 @@ def audit_report(rows: list[dict], limit: int = 20, char_limit: int = 100_000) -
     issues.sort(key=lambda it: it.get("date") or "", reverse=True)
     if not turns_checked:
         return "Check, Please audit: no saved turns with completion claims found in range."
-    label = {"STALE": "STALE", "FAILED": "FAILED", "NOT_BACKED": "NOT BACKED", "EDITED": "PROOF EDITED"}
+    label = {"STALE": "STALE", "FAILED": "FAILED", "NOT_BACKED": "NOT BACKED", "EDITED": "PROOF EDITED",
+              "PARTIAL": "PARTIAL"}
     lines = [
         f"Check, Please audit: {turns_checked} turns checked, {claims} claims, "
         f"{backed} backed, {len(issues)} not backed.",
@@ -1779,7 +1837,8 @@ def subagents_report(records: list[dict], char_limit: int = 1500) -> str:
     on_subagent_stop appends, where "verdicts" is a list of engine.verdict_to_dict() shapes."""
     if not records:
         return "Check, Please: no subagent runs logged yet."
-    label = {"NOT_BACKED": "not backed", "STALE": "stale", "FAILED": "failed", "EDITED": "proof edited"}
+    label = {"NOT_BACKED": "not backed", "STALE": "stale", "FAILED": "failed", "EDITED": "proof edited",
+             "PARTIAL": "partial run"}
     lines = ["Check, Please: subagents"]
     shown_any = False
     for rec in sorted(records, key=lambda r: r.get("ts", 0), reverse=True):
@@ -1836,6 +1895,8 @@ def catch_before_send_directive(verdicts: list[Verdict]) -> Optional[dict]:
             fix = "Say it failed, or fix the failure before claiming it worked."
         elif v.status == "EDITED":
             fix = "Disclose the edit, or rerun it without touching the proof file first."
+        elif v.status == "PARTIAL":
+            fix = "Say only that part ran, or run the whole suite before claiming it all passes."
         else:  # STALE
             fix = "Rerun the check, or say it has not been rerun since the change."
         sentences.append(f'Your draft says "{quoted}", but {v.note}. {fix}')
@@ -1882,7 +1943,7 @@ def inline_worthy(v: Verdict, inline_unbacked: bool = False) -> bool:
     listed in /check and the Desktop pane. Pass inline_unbacked=True to restore the old behavior
     for the higher-stakes kinds in _INLINE_NOT_BACKED_KINDS (sent, paid, deployed, pushed,
     deleted, scheduled) for users who want it. BACKED is never inline-worthy (nothing to flag)."""
-    if v.status in {"STALE", "FAILED", "EDITED"}:
+    if v.status in {"STALE", "FAILED", "EDITED", "PARTIAL"}:
         return True
     if v.status == "NOT_BACKED" and inline_unbacked:
         return v.claim.kind in _INLINE_NOT_BACKED_KINDS
@@ -1894,7 +1955,7 @@ def detail_report(verdicts: list[Verdict]) -> str:
         return "Check, Please: no completion claims found in the last reply."
     lines = ["Check, Please: last reply"]
     label = {"BACKED": "BACKED", "STALE": "STALE", "FAILED": "FAILED", "NOT_BACKED": "NOT BACKED",
-              "EDITED": "EDITED (proof edited)"}
+              "EDITED": "EDITED (proof edited)", "PARTIAL": "PARTIAL"}
     for v in verdicts:
         lines.append(f"- {label[v.status]}: \"{v.claim.text}\"")
         if v.proof:

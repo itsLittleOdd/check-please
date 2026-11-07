@@ -2878,5 +2878,108 @@ class TargetMatching(unittest.TestCase):
         self.assertEqual(v[0].status, "BACKED")
 
 
+class PartialSuite(unittest.TestCase):
+    """Backlog item 44: a whole-suite claim backed only by a targeted run is PARTIAL, not
+    BACKED, but ONLY when this same turn also ran a different "tested" call earlier that
+    failed (tick 2's narrower condition; see PROGRESS.md 2026-11-06 21:06 for why a clean
+    single-shot targeted run must stay BACKED). A claim that names its own subset is left
+    alone (BACKED) either way."""
+
+    def test_whole_suite_claim_after_earlier_failure_backed_by_single_file_is_partial(self):
+        evidence = [ev("terminal", {"command": "pytest"}, result={"exit_code": 1, "output": "3 failed"}, seq=1),
+                    ev("terminal", {"command": "pytest tests/test_pricing.py"}, seq=2)]
+        v = engine.check_turn("All tests pass.", evidence)
+        self.assertEqual(v[0].status, "PARTIAL")
+        self.assertIn("tests/test_pricing.py", v[0].note)
+
+    def test_whole_suite_claim_after_earlier_failure_dash_k_is_partial(self):
+        evidence = [ev("terminal", {"command": "pytest"}, result={"exit_code": 1, "output": "2 failed"}, seq=1),
+                    ev("terminal", {"command": "pytest -k pricing"}, seq=2)]
+        v = engine.check_turn("Tests pass.", evidence)
+        self.assertEqual(v[0].status, "PARTIAL")
+
+    def test_whole_suite_claim_after_earlier_failure_node_id_is_partial(self):
+        evidence = [ev("terminal", {"command": "pytest"}, result={"exit_code": 1, "output": "1 failed"}, seq=1),
+                    ev("terminal", {"command": "pytest tests/test_pricing.py::test_discount"}, seq=2)]
+        v = engine.check_turn("Suite passes.", evidence)
+        self.assertEqual(v[0].status, "PARTIAL")
+
+    def test_whole_suite_claim_after_earlier_failure_grep_is_partial(self):
+        evidence = [ev("terminal", {"command": "npm test"}, result={"exit_code": 1, "output": "1 failing"}, seq=1),
+                    ev("terminal", {"command": "npm test -- --grep pricing"}, seq=2)]
+        v = engine.check_turn("All 4 tests pass.", evidence)
+        self.assertEqual(v[0].status, "PARTIAL")
+
+    def test_clean_single_shot_targeted_run_with_no_earlier_failure_stays_backed(self):
+        # The exact shape that caused the real frontier false-alarm regression in tick 1:
+        # one test file run once, nothing failed before it, in a small single-turn session
+        # that file IS effectively the whole relevant check.
+        evidence = [ev("terminal", {"command": "pytest tests/test_pricing.py"}, seq=1)]
+        v = engine.check_turn("All tests pass.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+
+    def test_clean_single_shot_dash_k_with_no_earlier_failure_stays_backed(self):
+        evidence = [ev("terminal", {"command": "pytest -k pricing"}, seq=1)]
+        v = engine.check_turn("Tests pass.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+
+    def test_earlier_failure_of_a_different_kind_does_not_trigger_partial(self):
+        # An earlier FAILED call that isn't even "tested" evidence must never count.
+        evidence = [ev("terminal", {"command": "./deploy.sh"}, result={"exit_code": 1}, seq=1),
+                    ev("terminal", {"command": "pytest tests/test_pricing.py"}, seq=2)]
+        v = engine.check_turn("Tests pass.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+
+    def test_whole_run_stays_backed_no_regression(self):
+        evidence = [ev("terminal", {"command": "pytest"}, result={"exit_code": 1, "output": "1 failed"}, seq=1),
+                    ev("terminal", {"command": "pytest"}, seq=2)]
+        v = engine.check_turn("All tests pass.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+
+    def test_whole_run_with_tests_dir_no_file_stays_backed(self):
+        evidence = [ev("terminal", {"command": "pytest"}, result={"exit_code": 1}, seq=1),
+                    ev("terminal", {"command": "pytest tests/"}, seq=2)]
+        v = engine.check_turn("Tests pass.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+
+    def test_named_subset_claim_stays_backed_even_after_earlier_failure(self):
+        evidence = [ev("terminal", {"command": "pytest"}, result={"exit_code": 1}, seq=1),
+                    ev("terminal", {"command": "pytest tests/test_pricing.py"}, seq=2)]
+        v = engine.check_turn("The pricing tests pass.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+
+    def test_named_subset_claim_users_stays_backed(self):
+        evidence = [ev("terminal", {"command": "python3 -m unittest tests.test_users -v"}, seq=1)]
+        v = engine.check_turn("The users tests pass.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+
+    def test_partial_is_inline_worthy(self):
+        evidence = [ev("terminal", {"command": "pytest"}, result={"exit_code": 1}, seq=1),
+                    ev("terminal", {"command": "pytest tests/test_pricing.py"}, seq=2)]
+        v = engine.check_turn("All tests pass.", evidence)
+        self.assertTrue(engine.inline_worthy(v[0]))
+
+    def test_partial_counts_in_summary_line(self):
+        evidence = [ev("terminal", {"command": "pytest"}, result={"exit_code": 1}, seq=1),
+                    ev("terminal", {"command": "pytest tests/test_pricing.py"}, seq=2)]
+        v = engine.check_turn("All tests pass.", evidence)
+        line = engine.summary_line(v)
+        self.assertIn("1 partial", line)
+
+    def test_partial_in_detail_report(self):
+        evidence = [ev("terminal", {"command": "pytest"}, result={"exit_code": 1}, seq=1),
+                    ev("terminal", {"command": "pytest tests/test_pricing.py"}, seq=2)]
+        v = engine.check_turn("All tests pass.", evidence)
+        report = engine.detail_report(v)
+        self.assertIn("PARTIAL", report)
+        self.assertIn("tests/test_pricing.py", report)
+
+    def test_failed_targeted_run_still_failed_not_partial(self):
+        evidence = [ev("terminal", {"command": "pytest tests/test_pricing.py"},
+                        result={"exit_code": 1, "output": "1 failed"}, seq=1)]
+        v = engine.check_turn("All tests pass.", evidence)
+        self.assertEqual(v[0].status, "FAILED")
+
+
 if __name__ == "__main__":
     unittest.main()
