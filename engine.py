@@ -440,6 +440,43 @@ def _disclosed_edit(reply: str, path_detail: str) -> bool:
                            reply, _I))
 
 
+_TEST_ONLY_DIR = re.compile(r"(^|/)(tests?|spec|__tests__)/", _I)
+
+
+def _is_test_file_path(path: str) -> bool:
+    """Item 59(a): True only for the TEST-file shape of a proof file (a test's own path or
+    directory) -- never bin/scripts/tools/.github/ci/hooks/.husky, and never a gate-data file.
+    Used to find the narrower "the agent was already building this test file" exception, which
+    must not apply to scripts, hooks or CI config even though those also count as proof files."""
+    if not path:
+        return False
+    low = path.lower().rsplit("?", 1)[0].rsplit("#", 1)[0]
+    return bool(_TEST_ONLY_DIR.search(low) or _PROOF_FILE_NAME.search(low))
+
+
+def _own_new_test_write(all_evidence: list, backers: list, target: str, before_seq: int) -> bool:
+    """Item 59(a): True when *target* already received a successful saved/saved_code write
+    (the same path) with seq strictly before *before_seq* (the failing call that _find_edited_
+    proof paired with the later pass) AND no same-kind call had already passed before that
+    failure. That second condition is the real distinguishing fact: a brand-new test file that
+    has never passed before is being built from scratch (normal TDD); a test file that already
+    had at least one real pass earlier this session, then got rewritten right before a later
+    failure, is the "edit a previously-working check" shape item 43 already locks down as
+    EDITED (see EditedProofRootCauseFixes.test_env_error_then_unrelated_pass_does_not_hide_a_
+    later_real_edit, which has an earlier real pass and must stay EDITED). A test file first
+    touched only AFTER the failure gets no exception either way."""
+    if not target:
+        return False
+    if any(b.ok and b.seq < before_seq for b in backers):
+        return False
+    for e in all_evidence:
+        if e.kind not in {"saved", "saved_code"} or not e.ok or e.seq >= before_seq:
+            continue
+        if (e.path or e.detail) == target:
+            return True
+    return False
+
+
 def _find_edited_proof(all_evidence: list, backers: list):
     """Item 43 root-cause fix (2), 17:10: among *backers* (same-kind evidence for one claim),
     pair the LATEST pass (the one that actually backs the claim check_turn is judging -- the
@@ -452,7 +489,15 @@ def _find_edited_proof(all_evidence: list, backers: list):
     Real failures only: an env_error-flagged failure (see classify_call) is never treated as "the
     earlier failure" here, so a chain of env-error -> real pass -> edit -> real fail -> edit ->
     real pass still finds the real fail/pass pair, not the env-error/early-pass one.
-    Returns (failed_evidence, passing_evidence, proof_write_evidence) or None."""
+
+    Item 59(a) (Arlo, 2026-11-07): a false-alarm bug, not a new check. The agent writing and
+    debugging ITS OWN NEW test file (patch the test before any failure, run it, the new test
+    fails on a wrong fixture, patch the SAME test file again to fix the fixture, re-run, pass)
+    is normal test-driven work, not "edit the check to dodge a failure" -- the proof write
+    found here only counts as edited-the-check when the test file was first touched AFTER the
+    failure. Returns (failed_evidence, passing_evidence, proof_write_evidence, own_new_test)
+    or None; own_new_test is True only for the test-file shape (never scripts/hooks/gate-data)
+    and only when that same path already had a successful write before the paired failure."""
     failed = [e for e in backers if not e.ok and not e.env_error]
     passed = [e for e in backers if e.ok]
     if not failed or not passed:
@@ -468,7 +513,9 @@ def _find_edited_proof(all_evidence: list, backers: list):
     for w in writes:
         target = w.path or w.detail
         if _is_proof_file_path(target) or _is_gate_data_path(target, last_fail.fail_text):
-            return (last_fail, last_pass, w)
+            own_new_test = (_is_test_file_path(target)
+                             and _own_new_test_write(all_evidence, backers, target, last_fail.seq))
+            return (last_fail, last_pass, w, own_new_test)
     return None
 
 
@@ -2028,7 +2075,11 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
                 if edited and edited[1].seq == latest.seq:
                     proof_write = edited[2]
                     proof_name = proof_write.detail or "a proof file"
-                    if _disclosed_edit(reply, proof_write.detail):
+                    if len(edited) > 3 and edited[3]:
+                        verdicts.append(Verdict(claim, "BACKED", latest, rung,
+                                                f"after edits to {proof_name}, a test file the "
+                                                "agent was already writing before the failure"))
+                    elif _disclosed_edit(reply, proof_write.detail):
                         verdicts.append(Verdict(claim, "BACKED", latest, rung,
                                                 "after an edit the reply mentions"))
                     else:
@@ -2065,9 +2116,13 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
         if good:
             edited = _find_edited_proof(evidence, backers)
             if edited:
-                failed_ev, pass_ev, proof_write = edited
+                failed_ev, pass_ev, proof_write = edited[0], edited[1], edited[2]
                 proof_name = proof_write.detail or "a proof file"
-                if _disclosed_edit(reply, proof_write.detail):
+                if len(edited) > 3 and edited[3]:
+                    verdicts.append(Verdict(claim, "BACKED", pass_ev, rung,
+                                            f"after edits to {proof_name}, a test file the "
+                                            "agent was already writing before the failure"))
+                elif _disclosed_edit(reply, proof_write.detail):
                     verdicts.append(Verdict(claim, "BACKED", pass_ev, rung,
                                             "after an edit the reply mentions"))
                 else:

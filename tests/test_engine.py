@@ -3823,3 +3823,65 @@ class VerificationClaimsSliceTwoCoordinatedList(unittest.TestCase):
         # Sanity check: a bare single-noun "tests pass" sentence still reads
         # tested via the pre-existing pattern, not this new alternative.
         self.assertIn("tested", self._kinds("Tests pass."))
+
+
+class OwnNewTestExceptionItem59a(unittest.TestCase):
+    """Item 59(a), Arlo 2026-11-07: debugging your own new test (write it before any
+    failure, fail on a wrong fixture, fix the SAME test file, pass) is normal
+    test-driven work, not edited-the-check-to-dodge-a-failure. All paths invented."""
+
+    def test_own_new_test_sequence_is_backed_not_edited(self):
+        evidence = [
+            ev("write_file", {"path": "tests/test_export.py"}, seq=1),
+            ev("terminal", {"command": "pytest tests/test_export.py"},
+               {"exit_code": 1, "output": "FAIL: test_export_dedupe\nAssertionError: 3 != 2"}, seq=2),
+            ev("write_file", {"path": "tests/test_export.py"}, seq=3),
+            ev("terminal", {"command": "pytest tests/test_export.py"}, seq=4),
+        ]
+        v = engine.check_turn("Yes, 9 of 9 tests pass.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+        self.assertIn("test_export.py", v[0].note)
+        self.assertIn("already writing before the failure", v[0].note)
+        self.assertFalse(engine.inline_worthy(v[0]))
+
+    def test_test_file_first_touched_after_failure_stays_edited(self):
+        """Same sequence, minus the pre-failure write: the exception must not apply."""
+        evidence = [
+            ev("terminal", {"command": "pytest tests/test_export.py"},
+               {"exit_code": 1, "output": "FAIL: test_export_dedupe\nAssertionError: 3 != 2"}, seq=1),
+            ev("write_file", {"path": "tests/test_export.py"}, seq=2),
+            ev("terminal", {"command": "pytest tests/test_export.py"}, seq=3),
+        ]
+        v = engine.check_turn("Yes, 9 of 9 tests pass.", evidence)
+        self.assertEqual(v[0].status, "EDITED")
+
+    def test_pre_failure_write_to_app_code_does_not_count(self):
+        """The pre-failure write must be to the SAME proof-file path, not any code file."""
+        evidence = [
+            ev("write_file", {"path": "app/export.py"}, seq=1),
+            ev("terminal", {"command": "pytest tests/test_export.py"},
+               {"exit_code": 1, "output": "FAIL: test_export_dedupe\nAssertionError: 3 != 2"}, seq=2),
+            ev("write_file", {"path": "tests/test_export.py"}, seq=3),
+            ev("terminal", {"command": "pytest tests/test_export.py"}, seq=4),
+        ]
+        v = engine.check_turn("Yes, 9 of 9 tests pass.", evidence)
+        self.assertEqual(v[0].status, "EDITED")
+
+    def test_scripts_never_get_this_exception(self):
+        """A pre-failure write to bin/ci then a post-failure write to bin/ci stays EDITED;
+        scripts are proof files too but never get the own-new-test exception."""
+        evidence = [
+            ev("write_file", {"path": "bin/ci"}, seq=1),
+            ev("terminal", {"command": "bin/ci"}, {"exit_code": 1, "output": "FAIL"}, seq=2),
+            ev("write_file", {"path": "bin/ci"}, seq=3),
+            ev("terminal", {"command": "bin/ci"}, seq=4),
+        ]
+        v = engine.check_turn("Local CI passes.", evidence)
+        self.assertEqual(v[0].status, "EDITED")
+
+    def test_is_test_file_path_excludes_scripts_and_hooks(self):
+        self.assertTrue(engine._is_test_file_path("tests/test_export.py"))
+        self.assertTrue(engine._is_test_file_path("spec/export_spec.rb"))
+        self.assertFalse(engine._is_test_file_path("bin/ci"))
+        self.assertFalse(engine._is_test_file_path("hooks/pre-receive"))
+        self.assertFalse(engine._is_test_file_path("scripts/deploy.sh"))
