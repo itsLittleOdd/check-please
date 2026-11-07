@@ -1258,6 +1258,28 @@ class Claim:
                                    # claim names, or None when the sentence names no target.
 
 
+# Item 50 slice 2, shape (i): a coordinated list of named checks before "pass", e.g.
+# "All tests, typecheck, and lint pass." or "tests, lint and typecheck all pass." A
+# single check word plus "pass" is already covered above; this is only for 2+ distinct
+# named checks joined by a comma and/or "and". Closed, invented noun list (never a bare
+# wildcard) to keep this from matching unrelated coordinated lists ("all cats and dogs
+# pass by"). The clause splitter below (same splitter the item 50 slice 2(iii) span
+# protector works around) tears a comma/"and"-joined list into separate fragments before
+# any _CLAIM_PATTERNS regex ever runs, so detection needs the same two-step span-protector
+# shape: find the whole list with punctuation intact, then flatten its separators to plain
+# spaces so the clause splitter has nothing left to split on. The _CLAIM_PATTERNS
+# alternative below matches the ALREADY-FLATTENED form (space-joined nouns only).
+_CHECK_NOUN = (r"(?:tests?|typecheck|type-check|lint(?:ing)?|build|ci|format(?:ting)?|"
+               r"types?|e2e|unit tests?|integration tests?|snapshots?|coverage|docs?)")
+_CHECK_LIST = (rf"{_CHECK_NOUN}(?:\s*,\s*{_CHECK_NOUN})+\s*(?:,?\s*and\s+{_CHECK_NOUN})?|"
+               rf"{_CHECK_NOUN}\s+and\s+{_CHECK_NOUN}")
+_CHECK_LIST_FLAT = rf"{_CHECK_NOUN}(?:\s+{_CHECK_NOUN}){{1,3}}"
+_CHECK_LIST_SPAN = re.compile(
+    rf"\ball\s+(?:{_CHECK_LIST})\s+pass(?:es|ed|ing)?\b|"
+    rf"\b(?:{_CHECK_LIST})\s+all\s+pass(?:es|ed|ing)?\b",
+    _I,
+)
+
 # (rung, pattern). Past tense / completed state only.
 _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p in [
     ("paid", r"\b((?<!well )(?<!highly )(?<!fairly )(?<!poorly )"
@@ -1379,6 +1401,8 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
                # since the lead word sits before "you" and a lookbehind here can't see it.
                r"\byou (now )?have\b(?!\s+(not|never|to|yet|still)\b).{0,60}?\b(verified|validated|restorable)\b(?!\s+by\b)|"
                r"\bci (is )?(green|passes?|passing|passed)\b|"
+               rf"\ball\s+(?:{_CHECK_LIST_FLAT})\s+pass(?:es|ed|ing)?\b|"
+               rf"\b(?:{_CHECK_LIST_FLAT})\s+all\s+pass(?:es|ed|ing)?\b|"
                r"\b(regression |unit |integration |smoke |coverage )?tests?\b.{0,25}\bpasses?\b)\b"),
     ("scheduled", r"\b(scheduled|set up (a|the) (cron(\s+job)?|reminder|recurring\b)|created (a|the) cron|booked\s+(the|an?|your|\w+s)\b|"
                   r"added\b.{0,80}?\b(to|on) (your |the )?calendar\b|set a reminder|added a reminder|"
@@ -1689,6 +1713,16 @@ def _sentences(text: str) -> list[tuple[int, str]]:
         if _m:
             span = _m.group(0)
             p = p[: _m.start()] + span.replace(",", "") + p[_m.end() :]
+        # Item 50, slice 2 (i): same protector shape as above, for a coordinated list of
+        # named checks before "pass" ("All tests, typecheck, and lint pass."). Flatten the
+        # span's commas and " and " joiners to plain spaces so the clause splitter below
+        # has nothing left to split the list on; the "tested" pattern then matches the
+        # already-flattened space-joined form.
+        _m2 = _CHECK_LIST_SPAN.search(p)
+        if _m2:
+            span = _m2.group(0)
+            flat = re.sub(r"\s*,\s*and\s+|\s*,\s*|\s+and\s+", " ", span, flags=_I)
+            p = p[: _m2.start()] + flat + p[_m2.end() :]
         # Clause split so "Tests pass, preview is live and invoice emailed" yields three claims.
         # A question keeps its "?" on every clause so none of it reads as a claim.
         # gi groups clauses from the same original sentence, so two clauses of one sentence

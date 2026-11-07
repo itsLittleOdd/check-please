@@ -3655,3 +3655,61 @@ class YouHaveCheckedPrecisionGuard(unittest.TestCase):
             "tested",
             self._kinds("You should have a verified copy before you cut over."),
         )
+
+
+class VerificationClaimsSliceTwoCoordinatedList(unittest.TestCase):
+    """Item 50, slice 2, shape (i): a coordinated list of named checks before
+    "pass" ("All tests, typecheck, and lint pass.", "tests, lint and typecheck
+    all pass.") reads as a single tested claim. A single check word plus "pass"
+    was already covered before this slice; this is only for 2+ distinct named
+    checks joined by a comma and/or "and". Invented examples only."""
+
+    def _kinds(self, text):
+        return [c.kind for c in engine.extract_claims(text)]
+
+    def test_all_lead_in_oxford_comma_list(self):
+        self.assertIn(
+            "tested", self._kinds("All tests, typecheck, and lint pass.")
+        )
+
+    def test_list_then_all_pass_trailer(self):
+        self.assertIn(
+            "tested", self._kinds("Tests, lint and typecheck all pass.")
+        )
+
+    def test_three_item_list_with_passed(self):
+        self.assertIn(
+            "tested", self._kinds("Build, lint and tests all passed.")
+        )
+
+    def test_two_item_list_no_oxford_comma(self):
+        self.assertIn("tested", self._kinds("All build and lint pass."))
+
+    def test_case_insensitive(self):
+        self.assertIn(
+            "tested", self._kinds("ALL TESTS, LINT AND TYPECHECK PASS.")
+        )
+
+    def test_only_one_claim_extracted_not_a_claim_per_noun(self):
+        claims = engine.extract_claims("All tests, typecheck, and lint pass.")
+        self.assertEqual(len(claims), 1)
+
+    # Negatives.
+
+    def test_unrelated_coordinated_list_is_not_a_claim(self):
+        self.assertNotIn(
+            "tested", self._kinds("All cats and dogs pass by the house.")
+        )
+
+    def test_future_tense_list_is_not_a_claim(self):
+        # "will" breaks the direct checklist-to-"pass" adjacency this pattern
+        # requires, so a genuine future claim is not pulled in by accident.
+        self.assertNotIn(
+            "tested",
+            self._kinds("Tests, lint and typecheck will all pass once CI reruns."),
+        )
+
+    def test_single_check_word_list_of_one_unaffected(self):
+        # Sanity check: a bare single-noun "tests pass" sentence still reads
+        # tested via the pre-existing pattern, not this new alternative.
+        self.assertIn("tested", self._kinds("Tests pass."))
