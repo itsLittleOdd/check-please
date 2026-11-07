@@ -115,12 +115,58 @@ await checkAsync('pane renders real claims, status text drives the label, not ju
     const spans = collect(r, 'span')
     return textOf(spans[1])
   })
-  assert.deepEqual(labels, ['BACKED', 'NOT BACKED', 'STALE'])
+  // Item 29(d): worst verdict first (NOT BACKED, FAILED, STALE, BACKED), not backend order.
+  assert.deepEqual(labels, ['NOT BACKED', 'STALE', 'BACKED'])
 
   render(chip.render())
   await settle()
   const chipTree = render(chip.render())
   assert.equal(textOf(chipTree), 'check: 1/3')
+})
+
+await checkAsync('pane header tally reads good-first, like a receipt total (item 29c)', async () => {
+  sdk.host.state.focusedSessionId = 'sess-5'
+  const payload = {
+    claims: [
+      { kind: 'tested', text: 'ran the tests, all green', status: 'BACKED' },
+      { kind: 'saved', text: 'notes saved', status: 'BACKED' },
+      { kind: 'tested', text: 'tests pass (two turns ago)', status: 'STALE' },
+      { kind: 'tested', text: 'build is clean', status: 'STALE' },
+      { kind: 'sent', text: 'invoice emailed to Dana', status: 'NOT_BACKED' }
+    ],
+    backed: 2,
+    total: 5
+  }
+  const ctx = { rest: async () => payload }
+  const registered = register_(ctx)
+  const pane = registered.find((r) => r.id === 'pane')
+  render(pane.render())
+  await settle()
+  const tree = render(pane.render())
+  assert.match(textOf(tree), /2 backed · 2 stale · 1 not backed/)
+})
+
+await checkAsync('pane rows sort worst-first across all four named statuses (item 29d)', async () => {
+  sdk.host.state.focusedSessionId = 'sess-6'
+  const payload = {
+    claims: [
+      { kind: 'tested', text: 'c1', status: 'BACKED' },
+      { kind: 'tested', text: 'c2', status: 'STALE' },
+      { kind: 'tested', text: 'c3', status: 'FAILED' },
+      { kind: 'sent', text: 'c4', status: 'NOT_BACKED' }
+    ],
+    backed: 1,
+    total: 4
+  }
+  const ctx = { rest: async () => payload }
+  const registered = register_(ctx)
+  const pane = registered.find((r) => r.id === 'pane')
+  render(pane.render())
+  await settle()
+  const tree = render(pane.render())
+  const rows = collect(tree, 'div').filter((d) => (d.props.className || '').includes('justify-between'))
+  const texts = rows.map((r) => textOf(collect(r, 'span')[0]))
+  assert.deepEqual(texts, ['c4', 'c3', 'c2', 'c1'])
 })
 
 await checkAsync('ctx.rest rejecting falls back to the honest empty state, not a crash', async () => {

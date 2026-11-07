@@ -47,6 +47,36 @@ function verdictStyle(verdict) {
   return VERDICT_STYLES[verdict] || VERDICT_STYLES.NOT_BACKED
 }
 
+// Item 29(d): worst verdict first, per the backlog's own named order. Any status outside
+// that list (EDITED, PARTIAL — items 43/44) ranks between STALE and BACKED: still worth a
+// look, but not literally the spec's top two. Array.sort is stable in Node, so claims tied
+// on rank keep the backend's own order.
+const ROW_ORDER = ['NOT_BACKED', 'FAILED', 'STALE', 'BACKED']
+function rowRank(status) {
+  const i = ROW_ORDER.indexOf(status)
+  return i === -1 ? 2.5 : i
+}
+function sortedByRank(claims) {
+  return claims.slice().sort((a, b) => rowRank(a.status) - rowRank(b.status))
+}
+
+// Item 29(c): a header tally like a receipt total ("2 backed · 2 stale · 1 not backed"),
+// good-first per the backlog's own example order; any other status (EDITED, PARTIAL) is
+// appended after, lowest status label text, never color alone (same item-12 rule as rows).
+const TALLY_ORDER = ['BACKED', 'STALE', 'NOT_BACKED']
+function tallyText(claims) {
+  const counts = {}
+  for (const c of claims) counts[c.status] = (counts[c.status] || 0) + 1
+  const parts = []
+  for (const key of TALLY_ORDER) {
+    if (counts[key]) parts.push(`${counts[key]} ${verdictStyle(key).label.toLowerCase()}`)
+  }
+  for (const key of Object.keys(counts)) {
+    if (!TALLY_ORDER.includes(key)) parts.push(`${counts[key]} ${verdictStyle(key).label.toLowerCase()}`)
+  }
+  return parts.join(' \u00b7 ')
+}
+
 function ClaimRow({ claim }) {
   // claim.status matches engine.claims_payload()'s key exactly (BACKED | STALE | NOT_BACKED |
   // FAILED); FAILED falls through to the NOT_BACKED style via verdictStyle's default.
@@ -80,7 +110,19 @@ function CheckPane({ ctx }) {
             className: 'px-2 py-3 text-(--ui-text-tertiary)',
             children: 'No claims checked yet this session.'
           })
-        : jsx('div', { children: claims.map((c, i) => jsx(ClaimRow, { key: `${c.kind}-${i}`, claim: c })) })
+        : jsxs('div', {
+            children: [
+              // Item 29(c): header tally, like a receipt total.
+              jsx('div', {
+                className: 'px-2 pb-1 text-xs text-(--ui-text-tertiary)',
+                children: tallyText(claims)
+              }),
+              // Item 29(d): worst verdict first, so the thing that needs attention is on top.
+              jsx('div', {
+                children: sortedByRank(claims).map((c, i) => jsx(ClaimRow, { key: `${c.kind}-${c.text}-${i}`, claim: c }))
+              })
+            ]
+          })
     ]
   })
 }
