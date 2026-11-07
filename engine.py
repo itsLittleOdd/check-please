@@ -1561,7 +1561,11 @@ _CSV_LINE = re.compile(r"^\s*[\w$.%-]+(?:\s*,\s*[\w$.%-]+){2,}\s*$", re.M)
 # "Confirmed," label before the actual outcome sentence ("Confirmed: everyone got the
 # report."). The label itself carries no claim; strip it so the rest of the clause reads
 # against the normal claim patterns exactly as if it had been phrased in prose.
-_LEAD_CONFIRMED = re.compile(r"^confirmed[:,]\s+", _I)
+# Item 51, slice (d): the same lead-in also shows up as "Confirmed \u2014 X" (em dash),
+# "Confirmed \u2013 X" (en dash) and "Confirmed - X" (hyphen); without this, "Confirmed
+# \u2014 X is on in prod." read as a tested claim with "Confirmed" itself as the verb,
+# instead of letting the rest of the clause (the real deployed-kind claim) match normally.
+_LEAD_CONFIRMED = re.compile(r"^confirmed(?:[:,]\s+|\s*[\u2013\u2014-]\s+)", _I)
 
 
 def _has_partial_count(sent: str) -> bool:

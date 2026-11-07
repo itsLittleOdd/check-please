@@ -3290,6 +3290,22 @@ class AnswerStyleConfirmedOutcome(unittest.TestCase):
         # day off") must not false-positive as a send.
         self.assertEqual(self.kinds("Everyone got the day off for the holiday."), [])
 
+    def test_confirmed_em_dash_form_also_strips(self):
+        # Item 51, slice (d): "Confirmed \u2014 X" must strip the label the same way
+        # "Confirmed:" does, so "Confirmed" itself never reads as the claim's verb.
+        self.assertEqual(self.kinds("Confirmed \u2014 the fix is now live on staging."), ["deployed"])
+
+    def test_confirmed_en_dash_form_also_strips(self):
+        self.assertEqual(self.kinds("Confirmed \u2013 everyone got the invite."), ["sent"])
+
+    def test_confirmed_hyphen_form_also_strips(self):
+        self.assertEqual(self.kinds("Confirmed - the fix is now live on staging."), ["deployed"])
+
+    def test_confirmed_dash_with_no_outcome_noun_is_not_a_claim(self):
+        # Near-miss negative: a dash-led "Confirmed" that only confirms a plan, not a
+        # delivered outcome, must never read as a claim.
+        self.assertEqual(self.kinds("Confirmed \u2014 I'll get started on that."), [])
+
     def test_everyone_got_without_confirmed_prefix_still_matches(self):
         # The sent-side fix is independent of the prefix strip: "everyone got the report"
         # reads as sent even mid-reply, not only right after "Confirmed:".
