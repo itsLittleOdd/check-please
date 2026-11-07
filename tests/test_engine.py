@@ -3536,3 +3536,52 @@ class VerificationClaims(unittest.TestCase):
 
     def test_fresh_coffee_is_not_a_claim(self):
         self.assertNotIn("tested", self._kinds("Fresh coffee is in the kitchen."))
+
+
+class VerificationClaimsSliceTwoYouHave(unittest.TestCase):
+    """Item 50, slice 2, shape (iii): a yes-answer that hands the user a checked noun
+    phrase ("you (now)? have ... verified/validated/restorable ...") reads as tested
+    even with no bare is/are/'s copula. Invented examples only. The comma-separated
+    adjective list inside the span must survive _sentences()'s clause splitter."""
+
+    def _kinds(self, text):
+        return [c.kind for c in engine.extract_claims(text)]
+
+    def test_yes_you_have_clean_restorable_archive(self):
+        self.assertIn(
+            "tested",
+            self._kinds("Yes, you have a clean, restorable archive of the old schema."),
+        )
+
+    def test_yes_colon_you_now_have_verified_restorable_snapshot(self):
+        self.assertIn(
+            "tested",
+            self._kinds("Yes: you now have a verified, restorable snapshot."),
+        )
+
+    def test_confirmed_you_have_validated_export(self):
+        self.assertIn(
+            "tested",
+            self._kinds("Confirmed, you have a validated export in the bucket."),
+        )
+
+    def test_the_comma_separated_adjective_list_is_not_split_apart(self):
+        # Before this slice, the clause splitter in _sentences() would tear "a clean,
+        # restorable archive" into two fragments, neither of which read as a claim.
+        claims = engine.extract_claims(
+            "Yes, you have a clean, restorable archive of the old schema."
+        )
+        self.assertEqual(len(claims), 1)
+
+    # Negatives
+
+    def test_restorable_backups_are_kept_still_not_a_claim(self):
+        self.assertNotIn(
+            "tested", self._kinds("Restorable backups are kept for 30 days.")
+        )
+
+    def test_we_keep_a_verified_copy_offsite_is_not_a_claim(self):
+        self.assertNotIn("tested", self._kinds("We keep a verified copy offsite."))
+
+    def test_you_have_a_backup_with_no_check_word_is_not_a_claim(self):
+        self.assertNotIn("tested", self._kinds("You have a backup from Tuesday."))

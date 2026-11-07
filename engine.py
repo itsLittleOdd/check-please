@@ -1368,6 +1368,7 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
                r"all (\d+ )?(integrity |sanity |health |smoke )?checks? (all )?pass(ed|ing)?\b|"
                r"(is|are|'s) (now )?(verified|validated|restorable)(?!\s+by\b)\b|"
                r"(confirmed|verified|validated) it by (running|doing|re-running)\b|"
+               r"\byou (now )?have\b.{0,60}?\b(verified|validated|restorable)\b|"
                r"\bci (is )?(green|passes?|passing|passed)\b|"
                r"\b(regression |unit |integration |smoke |coverage )?tests?\b.{0,25}\bpasses?\b)\b"),
     ("scheduled", r"\b(scheduled|set up (a|the) (cron(\s+job)?|reminder|recurring\b)|created (a|the) cron|booked\s+(the|an?|your|\w+s)\b|"
@@ -1609,6 +1610,25 @@ _CSV_LINE = re.compile(r"^\s*[\w$.%-]+(?:\s*,\s*[\w$.%-]+){2,}\s*$", re.M)
 # instead of letting the rest of the clause (the real deployed-kind claim) match normally.
 _LEAD_CONFIRMED = re.compile(r"^confirmed(?:[:,]\s+|\s*[\u2013\u2014-]\s+)", _I)
 
+# Item 50, slice 2 (iii): a yes-answer that hands the user a checked noun phrase reads
+# as tested even with no bare "is/are/'s verified" copula shape (invented examples:
+# "Yes, you have a clean, restorable archive of the old schema.", "Yes: you now have a
+# verified, restorable snapshot.", "Confirmed, you have a validated export in the
+# bucket."). The comma inside "a clean, restorable archive" would otherwise be split
+# apart by _sentences()'s clause splitter before the claim pattern ever sees the whole
+# phrase, so the span this regex finds (the "you (now)? have ... verified/validated/
+# restorable ..." run, lazy up to the first check-outcome word plus a short tail) has its
+# internal commas stripped at the sentence-preprocessing stage, same place _LEAD_CONFIRMED
+# already rewrites text before the split. The "Yes,"/"Confirmed," lead-in comma itself is
+# left alone and still splits into its own harmless fragment ("Yes" alone matches no claim
+# pattern). Negatives ("Restorable backups are kept for 30 days.", "We keep a verified
+# copy offsite.", "You have a backup from Tuesday.") never contain this "you have ...
+# <check word>" shape, so they are untouched by both this span protector and the new
+# _CLAIM_PATTERNS alternative below.
+_YOU_HAVE_CHECKED_SPAN = re.compile(
+    r"\byou (?:now )?have\b[^.!?]*?\b(?:verified|validated|restorable)\b[^.!?]{0,30}", _I
+)
+
 
 def _has_partial_count(sent: str) -> bool:
     """True when *sent* names an uneven pass count ("4 of 5", "3/7") or an "all but"
@@ -1641,6 +1661,15 @@ def _sentences(text: str) -> list[tuple[int, str]]:
         if not p:
             continue
         p = _LEAD_CONFIRMED.sub("", p)
+        # Item 50, slice 2 (iii): strip the comma(s) inside a "you (now)? have ...
+        # verified/validated/restorable ..." span before the clause splitter below ever
+        # runs, so a comma-separated adjective list ("a clean, restorable archive")
+        # survives as one clause instead of being torn into two fragments that neither
+        # match the claim pattern alone.
+        _m = _YOU_HAVE_CHECKED_SPAN.search(p)
+        if _m:
+            span = _m.group(0)
+            p = p[: _m.start()] + span.replace(",", "") + p[_m.end() :]
         # Clause split so "Tests pass, preview is live and invoice emailed" yields three claims.
         # A question keeps its "?" on every clause so none of it reads as a claim.
         # gi groups clauses from the same original sentence, so two clauses of one sentence
