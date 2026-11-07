@@ -2842,6 +2842,45 @@ class CommittedIdiomAndIntensifierAdjectivesAreNotClaims(unittest.TestCase):
             "Just committed the migration script."))
 
 
+class DeployedFlagAndMigrationShapes(unittest.TestCase):
+    """Item 51, slice (b2)/(b3): a feature flag switched on in a named environment and a
+    migration/schema state both read as deployed with no bare "deployed"/"live" word of
+    their own. Invented examples only. Slice (b)'s coordinated-predicate shape ("are pushed
+    and live") was attempted and dropped this tick: see PROGRESS.md, it collides with the
+    one-claim-per-clause rule and swallows the real pushed claim (bench run 142443 regressed
+    from miss=1 to miss=2); needs a design that can emit two claims from one clause, not a
+    bigger slice than this tick's budget."""
+
+    def _kinds(self, text):
+        return [c.kind for c in engine.extract_claims(text)]
+
+    def test_feature_flag_on_in_named_environment_is_deployed(self):
+        self.assertIn("deployed", self._kinds("The new-checkout flag is on in prod."))
+        self.assertIn("deployed", self._kinds("The dark-launch switch is enabled in production."))
+        self.assertIn("deployed", self._kinds("The beta toggle is active in staging."))
+
+    def test_flag_on_with_no_environment_named_is_not_deployed(self):
+        # A flag turned on with no prod/staging tail names no deploy target; leave it alone.
+        self.assertNotIn("deployed", self._kinds("The dark-launch switch is enabled."))
+        self.assertNotIn("deployed", self._kinds("The porch light is on in the evenings."))
+
+    def test_migration_applied_state_is_deployed(self):
+        self.assertIn("deployed", self._kinds("Migration 0007 is applied."))
+        self.assertIn("deployed", self._kinds("Migration 0007 is recorded."))
+        self.assertIn("deployed", self._kinds("Migration 0007 is in place."))
+        self.assertIn("deployed", self._kinds("All migrations are applied."))
+        self.assertIn("deployed", self._kinds("The new column is live and all 4 migrations applied."))
+
+    def test_migration_not_yet_applied_is_not_deployed(self):
+        self.assertNotIn("deployed", self._kinds("The migration is ready to apply."))
+        self.assertNotIn("deployed", self._kinds("Migrations will run at deploy."))
+
+    def test_bare_is_live_with_no_prod_tail_is_still_deployed(self):
+        # Item 51(b3): confirms the existing "is live" rung already covers this shape
+        # (no "in prod" tail needed); this is a regression guard, not a new pattern.
+        self.assertIn("deployed", self._kinds("The `phone` column is live and queries are fast now."))
+
+
 class ScheduleReadsAreNeverEvidence(unittest.TestCase):
     """Item 43 gates note (2026-11-06 17:20): crontab -l, launchctl list and atq only list a
     schedule; they never install or change one, so they must never back a scheduled claim.

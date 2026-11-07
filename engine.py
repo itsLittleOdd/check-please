@@ -1283,7 +1283,16 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
                  # word boundary so it still requires a real subject before it, same as the
                  # existing "is" alternative; it never matches a bare "'s" on its own.
                  r"(?:is|'s)\s*(now\s+)?live|went live|now live|shipped to prod(uction)?|"
-                 r"published(?!\s+(the\s+)?release\s+notes?\b)|released|rolled out)\b"),
+                 r"published(?!\s+(the\s+)?release\s+notes?\b)|released|rolled out|"
+                 # A feature flag or service switched on in a named environment is a deploy
+                 # claim even with no "live"/"deployed" word at all.
+                 r"(?:is|'s|are)\s+(?:on|enabled|active)\s+in\s+(?:prod(?:uction)?|staging)|"
+                 # Item 51(b2): a migration/schema state read as deployed. "the migration is
+                 # ready to apply" and "migrations will run at deploy" (future/not-yet) must
+                 # not match: this requires the literal past state word applied/recorded/in
+                 # place, never "apply"/"will run".
+                 r"migration\s+\S+\s+(?:is\s+)?(?:applied|recorded|in place)|"
+                 r"all\s+(?:\d+\s+)?migrations?\s+(?:are\s+)?applied)\b"),
     # Item 27, seventh direct-kind look ("pushed", the last unchecked kind, 41 real-world
     # flags). Same noun/idiom-object shape already fixed for paid/deployed/saved/deleted:
     # "pushed the deadline back", "pushed the limits", "pushed the envelope", "pushed the
