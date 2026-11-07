@@ -76,6 +76,8 @@ hermes plugins install check-please
 
 `next_turn_nudge`: on by default. See "Catch before send" below.
 
+`cron_guard`: on by default. On an unattended cron run, puts the worst inline-worthy claim (stale, failed, proof edited, or not-backed when `inline_unbacked` is also on) at the TOP of the delivered reply, one line, so a human skimming a cron digest sees it before anything else. The normal Check line still runs too, at the bottom, as usual. Never alters a reply that is exactly empty or the literal `[SILENT]` suppression token many cron jobs use to stay silent-on-green. Detected through `ctx.current_cron_execution()`; outside a cron run this setting does nothing.
+
 ## Catch before send
 
 Two settings work together to stop a stale or failed claim before it reaches you, instead of only reporting it after the fact.
