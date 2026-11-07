@@ -389,6 +389,37 @@ await checkAsync('two rows expand independently, proving state is not shared acr
   assert.ok(!textOf(tree).includes('Proof: proof two'), 'row two must stay collapsed when only row one was clicked')
 })
 
+await checkAsync('receipt layout (item 29f): rows then a dashed rule then the total, not header-first', async () => {
+  sdk.host.state.focusedSessionId = 'sess-12'
+  const payload = {
+    claims: [
+      { kind: 'tested', text: 'ran the tests, all green', status: 'BACKED' },
+      { kind: 'sent', text: 'invoice emailed to Dana', status: 'NOT_BACKED' }
+    ],
+    backed: 1,
+    total: 2
+  }
+  const ctx = { rest: async () => payload }
+  const registered = register_(ctx)
+  const pane = registered.find((r) => r.id === 'pane')
+  render(pane.render())
+  await settle()
+  const tree = render(pane.render())
+  const divs = collect(tree, 'div')
+  const linesDiv = divs.find((d) => (d.props.className || '').includes('receipt-lines'))
+  const totalDiv = divs.find((d) => (d.props.className || '').includes('receipt-total'))
+  assert.ok(linesDiv, 'receipt-lines wrapper not found')
+  assert.ok(totalDiv, 'receipt-total wrapper not found')
+  // The dotted rule above the total: a dashed border, never relying on spacing alone.
+  assert.match(totalDiv.props.className, /border-dashed/)
+  assert.match(totalDiv.props.className, /border-t\b/)
+  // Order: line items render before the total, like reading down a receipt to the bottom line.
+  const flatTexts = collect(tree, 'div').map((d) => d === linesDiv ? '[LINES]' : d === totalDiv ? '[TOTAL]' : null).filter(Boolean)
+  assert.deepEqual(flatTexts, ['[LINES]', '[TOTAL]'])
+  // The total line still reads with text, not color alone (item 12).
+  assert.match(textOf(totalDiv), /1 backed · 1 not backed/)
+})
+
 // useClaims' setInterval(load, POLL_MS) is never cleared here (no real unmount happens in this
 // harness), so the event loop would otherwise stay alive forever; exit explicitly instead of
 // letting that look like a hang.

@@ -196,16 +196,17 @@ function CheckPane({ ctx }) {
             className: 'px-2 py-3 text-(--ui-text-tertiary)',
             children: 'No claims checked yet this session.'
           })
+        // Item 29(f): the guest-check look from the storyboard — line items, then a dotted
+        // rule, then the tally read like a receipt total (bottom, not top). Text labels
+        // still carry the status (item 12: color is never the only signal), so this is a
+        // layout/order change only, never a new signal.
         : jsxs('div', {
+            className: 'receipt',
             children: [
-              // Item 29(c): header tally, like a receipt total.
-              jsx('div', {
-                className: 'px-2 pb-1 text-xs text-(--ui-text-tertiary)',
-                children: tallyText(claims)
-              }),
               // Item 29(d): worst verdict first, so the thing that needs attention is on top.
               // Item 29(b): dedupe same-run STALE rows into one row with a count before sorting.
               jsx('div', {
+                className: 'receipt-lines',
                 children: sortedByRank(dedupeSameRunStale(claims)).map((c, i) => {
                   const key = `${c.kind}-${c.text}-${i}`
                   return jsx(ClaimRow, {
@@ -215,6 +216,13 @@ function CheckPane({ ctx }) {
                     onToggle: () => toggleKey(key)
                   })
                 })
+              }),
+              // Item 29(c): header-turned-footer tally, like a receipt total: a dashed rule
+              // above it (border-dashed, never relying on spacing alone at narrow widths),
+              // bold weight so it still reads as "the total" with no color involved.
+              jsx('div', {
+                className: 'receipt-total mt-1 border-t border-dashed border-(--ui-border) px-2 pt-1.5 text-xs font-medium',
+                children: tallyText(claims)
               })
             ]
           })
