@@ -1125,7 +1125,13 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
              r"(invoice|bill|deposit|rent|fee|balance) (is|was|has been|have been) (paid|charged))\b"),
     ("sent", r"\b(sent(?!\s+\w*\s*(a |an |the )?calendar invite|\s+(folder|items?|box|mail|tray))|emailed|e-mailed|texted|messaged|dm'?d|replied to|posted (it|this|that|the|a|an|to|in|on)\b|"
              r"notified|delivered (it|the|to)|it'?s been sent|has been sent|have been sent|went out|is out the door)"),
-    ("deployed", r"\b(deployed(?!\s+(environment|version|branch|instance|url|preview|slot))|is (now )?live|went live|now live|shipped to prod(uction)?|"
+    ("deployed", r"\b(deployed(?!\s+(environment|version|branch|instance|url|preview|slot))|"
+                 # Item 46: "is (now )?live" required the literal word "is"; a contracted
+                 # answer-style reply ("It's live.", "It's now live on staging.") fell
+                 # through with no deployed claim at all. "'s" is anchored right after a
+                 # word boundary so it still requires a real subject before it, same as the
+                 # existing "is" alternative; it never matches a bare "'s" on its own.
+                 r"(?:is|'s)\s*(now\s+)?live|went live|now live|shipped to prod(uction)?|"
                  r"published(?!\s+(the\s+)?release\s+notes?\b)|released|rolled out)\b"),
     # Item 27, seventh direct-kind look ("pushed", the last unchecked kind, 41 real-world
     # flags). Same noun/idiom-object shape already fixed for paid/deployed/saved/deleted:

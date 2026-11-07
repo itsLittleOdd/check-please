@@ -677,6 +677,16 @@ class ExtractClaims(unittest.TestCase):
         self.assertEqual(self.kinds("I read the diff line by line and verified it looks solid."), ["tested"])
         self.assertEqual(self.kinds("I checked the PR myself and confirmed it looks good to go."), ["tested"])
 
+    def test_contraction_is_live_counts_as_deployed(self):
+        # Item 46 (answer-style claims): "is (now )?live" required the literal word "is", so
+        # a contracted "it's live"/"it's now live" answer to "did it ship?" fell through with
+        # no deployed claim at all. Invented examples only.
+        self.assertEqual(self.kinds("It's live in prod right now."), ["deployed"])
+        self.assertEqual(self.kinds("It's now live on staging."), ["deployed"])
+        # A non-contracted claim about something else being alive, not a deploy, must still
+        # read as nothing (the word boundary and the whole claim pattern are unchanged).
+        self.assertEqual(self.kinds("The cat's very much alive."), [])
+
     def test_table_rows_ignored(self):
         # Invented example: a status table whose cells happen to contain claim words.
         text = "| step | status |\n| --- | --- |\n| deploy | sent |\n| backup | paid |\n"
