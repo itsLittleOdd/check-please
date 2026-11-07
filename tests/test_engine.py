@@ -2881,6 +2881,48 @@ class DeployedFlagAndMigrationShapes(unittest.TestCase):
         self.assertIn("deployed", self._kinds("The `phone` column is live and queries are fast now."))
 
 
+class SentAnswerShapesSecondPass(unittest.TestCase):
+    """Item 51, slice (c): four new sent shapes with no bare "sent"/"emailed" word of
+    their own. Invented examples only. Reported-speech and third-party-subject near
+    misses rely on the existing _NEGATION/_THIRD_PARTY_PASSIVE guards, not new code."""
+
+    def _kinds(self, text):
+        return [c.kind for c in engine.extract_claims(text)]
+
+    def test_name_and_everyone_else_got_it_is_sent(self):
+        self.assertIn("sent", self._kinds("Dana and everyone else got it."))
+        self.assertIn("sent", self._kinds("Sam and everyone else have got it."))
+
+    def test_group_got_this_weeks_or_todays_doc_is_sent(self):
+        self.assertIn("sent", self._kinds("The whole sales team got this week's update."))
+        self.assertIn("sent", self._kinds("Everyone on the list received today's digest."))
+        self.assertIn("sent", self._kinds("The entire team got the report."))
+
+    def test_doc_was_delivered_is_sent(self):
+        self.assertIn("sent", self._kinds("The invoice was delivered."))
+        self.assertIn("sent", self._kinds("The report has been delivered."))
+
+    def test_names_team_has_the_doc_is_sent(self):
+        self.assertIn("sent", self._kinds("Sam's team has the report."))
+        self.assertIn("sent", self._kinds("Dana's team now has the invoice."))
+
+    def test_doc_is_in_pronoun_inbox_is_sent(self):
+        self.assertIn("sent", self._kinds("The file is in her inbox."))
+        self.assertIn("sent", self._kinds("The invite is in his inbox."))
+        self.assertIn("sent", self._kinds("The link is in their inbox."))
+        self.assertIn("sent", self._kinds("The report is in your inbox."))
+
+    def test_reported_speech_about_these_shapes_is_not_a_claim(self):
+        # Third-party report, not the assistant's own observation; existing _NEGATION
+        # reported-speech guard should still void these.
+        self.assertNotIn("sent", self._kinds("The client said the report was delivered."))
+        self.assertNotIn("sent", self._kinds("She told me the file is in her inbox."))
+
+    def test_unrelated_group_or_inbox_sentences_are_not_claims(self):
+        self.assertNotIn("sent", self._kinds("The whole team got the flu this week."))
+        self.assertNotIn("sent", self._kinds("The spam folder is in her inbox tab."))
+
+
 class ScheduleReadsAreNeverEvidence(unittest.TestCase):
     """Item 43 gates note (2026-11-06 17:20): crontab -l, launchctl list and atq only list a
     schedule; they never install or change one, so they must never back a scheduled claim.

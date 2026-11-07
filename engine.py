@@ -1274,8 +1274,26 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
              # got the report.") describes delivery reaching recipients without the verb
              # "sent" itself. Closed, invented noun list (a deliverable, not any object) keeps
              # this from matching unrelated "everyone got food poisoning" style sentences.
-             r"(everyone|the team|all recipients|all of them) (?:has |have )?(got|received) (the |a |an )?"
-             r"(report|email|invoice|copy|file|doc(ument)?|invite|link|message)\b)"),
+             # Item 51, slice (c): widened to the same shape with an "entire/whole" qualifier
+             # and more group nouns (sales team/group/list), plus a "this week's"/"today's"
+             # determiner (invented examples: "The whole sales team got this week's update.",
+             # "Everyone on the list received today's digest."). Still a closed deliverable
+             # noun list, not any object, so unrelated group claims never match.
+             r"(everyone|the (entire |whole )?(team|sales team|group|list)|all recipients|all of them) (?:has |have )?(got|received) (the |a |an |this week'?s |today'?s )?"
+             r"(report|email|invoice|copy|file|doc(ument)?|invite|link|message|update|digest)\b|"
+             # Item 51, slice (c), new shapes: "<Name> and everyone else got it", a doc noun as
+             # the subject of a passive "was delivered", "<Name>'s team has the <doc>", and a
+             # doc noun "is in her/his/their/your inbox". Invented examples: "Dana and everyone
+             # else got it.", "The invoice was delivered.", "Sam's team has the report.",
+             # "The file is in her inbox." All four describe the deliverable reaching its
+             # recipient without the verb "sent" itself, same family as the shapes above.
+             # _sentences() splits a clause on "and", so "Dana and everyone else got it"
+             # arrives here as two fragments ("Dana" / "everyone else got it."); match the
+             # surviving fragment directly rather than requiring the now-discarded name.
+             r"\beveryone else (?:has |have )?got it\b|"
+             r"(report|email|invoice|copy|file|doc(ument)?|invite|link|message)\s+(was|were|has been|have been)\s+delivered\b|"
+             r"\w+'s team (?:now )?has (the |a |an )?(report|email|invoice|copy|file|doc(ument)?|invite|link|message)\b|"
+             r"(report|email|invoice|copy|file|doc(ument)?|invite|link|message)\s+is\s+in\s+(her|his|their|your)\s+inbox\b)"),
     ("deployed", r"\b(deployed(?!\s+(environment|version|branch|instance|url|preview|slot))|"
                  # Item 46: "is (now )?live" required the literal word "is"; a contracted
                  # answer-style reply ("It's live.", "It's now live on staging.") fell
