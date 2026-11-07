@@ -71,6 +71,8 @@ class Evidence:
                                # found, a missing Python module, exit code 127), not a real test
                                # or check failure. _find_edited_proof must never treat this as
                                # "the earlier failure" a later edit explains away.
+    cmd: str = ""              # item 43 (Arlo, 2026-11-07): the raw shell command for terminal
+                               # evidence, so check_turn can see which program actually ran.
     narrow_scope: str = ""     # item 44 (PARTIAL SUITE): set on "tested" evidence when the
                                # command only ran a single test file/module, -k expr, node id
                                # (::name) or --grep filter, never the whole suite. Empty for a
@@ -552,6 +554,70 @@ def _earliest_chain_kind(cmd: str) -> Optional[str]:
     return kinds[0]
 
 
+_COMMIT_OK = re.compile(r"^\[[^\]\s]+(?: \([^)]*\))? [0-9a-f]{7,}\]", re.M)
+
+# Item 43 (Arlo, 2026-11-07): claims about effects outside the machine. A program the agent
+# wrote or overwrote earlier in the same session cannot prove one of these, disclosed or not:
+# a mail script it just wrote that prints "delivered" proves nothing reached the recipient.
+_OUTWARD_KINDS = {"sent", "paid", "pushed", "deployed", "scheduled"}
+_CHAIN_SPLIT = re.compile(r"&&|\|\||;|\|")
+_SKIP_WORDS = {"sudo", "env", "exec", "nohup", "time", "command", "then", "do"}
+
+
+def _programs_run(cmd: str) -> list:
+    """First word of every sub-command (env assignments, cd and wrappers skipped), as written."""
+    progs = []
+    for part in _CHAIN_SPLIT.split(_drop_script_bodies(cmd or "")):
+        words = [w for w in part.strip().split() if not re.match(r"^\w+=", w)]
+        while words and words[0] in _SKIP_WORDS:
+            words = words[1:]
+        if words and words[0] not in ("cd", "echo", "printf", "cat", "true", "false", "test", "["):
+            progs.append(_strip_quotes(words[0]))
+    return progs
+
+
+def _rewritten_program(evidence: list, backing: "Evidence") -> str:
+    """If a program the backing terminal call ran was written earlier this session (a
+    write_file/patch/shell write whose target is that program, inside a bin/ folder or by the
+    same relative path), return its display name; else ''. Only the program that actually ran
+    counts: editing a helper it calls is the proof-file rule's business, not this one."""
+    if not backing.cmd:
+        return ""
+    writes = [e for e in evidence if e.kind in {"saved", "saved_code", "drafted"} and e.ok
+              and e.path and e.seq < backing.seq]
+    for prog in _programs_run(backing.cmd):
+        base = prog.rsplit("/", 1)[-1]
+        if not base or len(base) < 2:
+            continue
+        for w in writes:
+            wp = w.path.replace("\\", "/")
+            if wp.rsplit("/", 1)[-1] != base:
+                continue
+            if "/" in prog:
+                if wp.endswith(prog.lstrip("./")):
+                    return prog
+            elif re.search(r"(^|/)bin/[^/]+$", wp):
+                return f"bin/{base}"
+    return ""
+
+
+def _first_stage_failed(cmd: str, kind: str, result: Any) -> bool:
+    """Item 43 (Arlo, 2026-11-07): in a failed `a && b` chain, `&&` stops at the first failing
+    stage, so the earliest matched stage did not necessarily succeed. Evidence that it failed:
+    its own program printed an error line starting with "<program>:" (for example
+    "crontab: Operation not permitted"), or, for a git commit stage, git saying there was
+    nothing to commit."""
+    out = str(result or "")
+    stage = next((part for part in cmd.split("&&") if _scan_ladder(part) == kind), "")
+    words = [w for w in stage.strip().split() if "=" not in w.split("/")[0] and w not in ("sudo", "env")]
+    prog = words[0].rsplit("/", 1)[-1] if words else ""
+    if prog and re.search(rf"(^|\n|\")\s*{re.escape(prog)}:\s", out):
+        return True
+    if kind == "committed" and re.search(r"nothing to commit|no changes added to commit", out):
+        return True
+    return False
+
+
 def _semicolon_kind_is_ambiguous(cmd: str, kind: Optional[str]) -> bool:
     """Item 40 cause (3), the `;` case. Unlike `&&`, every `;`-joined sub-command runs no
     matter what the previous one did, so an earlier stage's own success or failure is
@@ -662,37 +728,48 @@ def _strip_quotes(token: str) -> str:
     return token
 
 
+_QUOTED_SPAN = re.compile(r"'[^']*'" + r'|"(?:[^"\\]|\\.)*"', re.S)
+
+
+def _drop_script_bodies(cmd: str) -> str:
+    """Item 43 (Arlo, 2026-11-07): a quoted argument that is really a script body (an echo or
+    printf of a multi-line file, or anything long) can contain its own redirects and verbs.
+    Those describe the file being written, not writes this command performs. Replace such spans
+    with a placeholder; short quoted tokens (a quoted path) are kept."""
+    def repl(m):
+        body = m.group(0)
+        if "\n" in body or "\\n" in body or len(body) > 120:
+            return "'BODY'"
+        return body
+    return _QUOTED_SPAN.sub(repl, cmd)
+
+
 def _shell_write_targets(cmd: str) -> list:
-    """Best-effort list of file paths a shell command writes to, or [] when the command
-    does not look like a write. Order: redirects and tee first (they can coexist with other
-    verbs), then the single-verb forms, each returning on first match since a real command
-    normally only does one of these."""
+    """Best-effort list of every file path a shell command writes to, or [] when the command
+    does not look like a write. Script bodies inside quotes are ignored (_drop_script_bodies).
+    All sub-commands of a chain contribute (cp then a redirect in one && chain both count)."""
+    cmd = _drop_script_bodies(cmd)
     targets = []
     for m in _REDIRECT_TARGET.finditer(cmd):
-        targets.append(_strip_quotes(m.group(1)))
+        t = _strip_quotes(m.group(1))
+        if t and t != "BODY" and not t.startswith("&") and t != "/dev/null":
+            targets.append(t)
     for m in _TEE_TARGET.finditer(cmd):
         for tok in m.group(1).split():
             if not tok.startswith("-"):
                 targets.append(_strip_quotes(tok))
-    if targets:
-        return targets
-    m = _CP_MV_LN_INSTALL_CMD.search(cmd)
-    if m:
-        toks = [t for t in m.group(1).split() if not t.startswith("-")]
-        if toks:
-            return [_strip_quotes(toks[-1])]
-    m = _SED_PERL_I_CMD.search(cmd)
-    if m:
-        toks = [t for t in m.group(1).split() if not t.startswith("-")]
-        if toks:
-            return [_strip_quotes(toks[-1])]
-    m = _TOUCH_CMD.search(cmd)
-    if m:
-        return [_strip_quotes(t) for t in m.group(1).split() if not t.startswith("-")]
-    m = _CHMOD_CMD.search(cmd)
-    if m:
-        return [_strip_quotes(t) for t in m.group(1).split() if not t.startswith("-")]
-    return []
+    for rx, last_only in ((_CP_MV_LN_INSTALL_CMD, True), (_SED_PERL_I_CMD, True),
+                          (_TOUCH_CMD, False), (_CHMOD_CMD, False)):
+        for m in rx.finditer(cmd):
+            toks = [t for t in m.group(1).split() if not t.startswith("-")]
+            if toks:
+                targets.extend([_strip_quotes(toks[-1])] if last_only else [_strip_quotes(t) for t in toks])
+    seen, out = set(), []
+    for t in targets:
+        if t and t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
 
 
 def classify_call(tool_name: str, args: Any, result: Any = None, status: Optional[str] = None,
@@ -721,7 +798,8 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
             # exactly like write_file/patch, so it must be visible to _find_edited_proof too.
             targets = _shell_write_targets(cmd)
             if targets:
-                path = targets[0]
+                proof = [t for t in targets if _is_proof_file_path(t)]
+                path = (proof or targets)[0]
                 wkind = "saved_code" if _is_code_path(path) else "saved"
                 stales = not _is_docs_or_notes_path(path)
                 return Evidence(wkind, True, name, _display_path(path)[:160], seq, ts, "",
@@ -729,7 +807,10 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
         if not ok and "&&" in cmd:
             earliest = _earliest_chain_kind(cmd)
             if earliest:
-                return Evidence(earliest, True, name, short, seq, ts)
+                if _first_stage_failed(cmd, earliest, result):
+                    return Evidence(earliest, False, name, short, seq, ts, reason or "the first step failed",
+                                    cmd=cmd[:2000])
+                return Evidence(earliest, True, name, short, seq, ts, cmd=cmd[:2000])
         if not ok and ";" in cmd and "&&" not in cmd and _semicolon_kind_is_ambiguous(cmd, kind):
             return None
         if ok and "||" in cmd and "&&" not in cmd and _double_pipe_kind_is_ambiguous(cmd, kind):
@@ -739,7 +820,7 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
             return None
         narrow = _targeted_test_scope(cmd) if kind == "tested" else ""
         return Evidence(kind, ok, name, short, seq, ts, reason, env_error=env_error,
-                         narrow_scope=narrow) if kind else None
+                         narrow_scope=narrow, cmd=cmd[:2000]) if kind else None
 
     if low in _CODE_TEXT_TOOLS:
         # execute_code runs Python directly; browser_exec runs Python against browser helpers.
@@ -1551,6 +1632,12 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
                 verdicts.append(Verdict(claim, "FAILED", latest, rung, note))
             continue
         good = [e for e in backers if e.ok]
+        if good and claim.kind in _OUTWARD_KINDS:
+            rewritten = _rewritten_program(evidence, max(good, key=lambda e: e.seq))
+            if rewritten:
+                verdicts.append(Verdict(claim, "EDITED", max(good, key=lambda e: e.seq), rung,
+                                        f"{claim.kind} ran through {rewritten}, which was rewritten this session"))
+                continue
         if good:
             edited = _find_edited_proof(evidence, backers)
             if edited:
