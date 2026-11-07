@@ -3412,3 +3412,45 @@ class AnswerStyleConfirmedOutcome(unittest.TestCase):
         # A third-party pronoun sitting in the window before the match ("their email
         # said") must still void the claim, same as the existing third-party-subject guard.
         self.assertEqual(self.kinds("Their email said the team got the report."), [])
+
+
+class AllSetForNarrowScheduledShape(unittest.TestCase):
+    """Item 51, slice (e), ARLO DECISION 2026-11-07 12:50: "you're all set for <event>"
+    reads as scheduled ONLY when the same clause carries a clock time, a day-of-week
+    name, or a calendar date. With only tomorrow/today/tonight/this week, or no time
+    word at all, it is a reassurance and stays unclaimed. Own-corpus row 158 ("You're
+    all set for your 3pm with the dentist.") is unchanged and must still read scheduled.
+    Invented examples only."""
+
+    def _kinds(self, text):
+        return [c.kind for c in engine.extract_claims(text)]
+
+    def test_bare_event_with_no_time_word_is_not_scheduled(self):
+        self.assertNotIn("scheduled", self._kinds("You're all set for the demo tomorrow."))
+
+    def test_bare_event_this_week_is_not_scheduled(self):
+        self.assertNotIn(
+            "scheduled", self._kinds("You're all set for the onboarding call this week.")
+        )
+
+    def test_bare_event_with_no_time_word_at_all_is_not_scheduled(self):
+        self.assertNotIn("scheduled", self._kinds("You're all set for the interview."))
+
+    def test_clock_time_in_same_clause_is_scheduled(self):
+        # Row 158's exact shape, must stay scheduled.
+        self.assertIn(
+            "scheduled", self._kinds("You're all set for your 3pm with the dentist.")
+        )
+
+    def test_day_of_week_and_clock_time_is_scheduled(self):
+        self.assertIn("scheduled", self._kinds("You're all set for Tuesday at 10."))
+
+    def test_bare_day_of_week_alone_is_scheduled(self):
+        self.assertIn("scheduled", self._kinds("You're all set for Friday."))
+
+    def test_calendar_date_is_scheduled(self):
+        self.assertIn("scheduled", self._kinds("You're all set for December 3rd."))
+
+    def test_noon_and_midnight_count_as_clock_time(self):
+        self.assertIn("scheduled", self._kinds("You're all set for the call at noon."))
+        self.assertIn("scheduled", self._kinds("You're all set for pickup at midnight."))
