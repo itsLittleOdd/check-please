@@ -1368,7 +1368,16 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
                r"all (\d+ )?(integrity |sanity |health |smoke )?checks? (all )?pass(ed|ing)?\b|"
                r"(is|are|'s) (now )?(verified|validated|restorable)(?!\s+by\b)\b|"
                r"(confirmed|verified|validated) it by (running|doing|re-running)\b|"
-               r"\byou (now )?have\b.{0,60}?\b(verified|validated|restorable)\b|"
+               # Item 57: guard this alternative the same way the bare copula shape above is
+               # guarded. (a) a negated/modal/obligation word right after "have" (not/never/
+               # to/yet/still) means this is an admission or an instruction, not a receipt
+               # (invented: "You have not verified the backup yet.", "You have to make sure
+               # the export is validated by finance before Monday."). (b) a third party doing
+               # the checking ("by <name>") right after the check word voids it, same as the
+               # bare copula alternative already does. The conditional lead-in case ("If you
+               # have a restorable snapshot, we can roll back.") is handled separately below,
+               # since the lead word sits before "you" and a lookbehind here can't see it.
+               r"\byou (now )?have\b(?!\s+(not|never|to|yet|still)\b).{0,60}?\b(verified|validated|restorable)\b(?!\s+by\b)|"
                r"\bci (is )?(green|passes?|passing|passed)\b|"
                r"\b(regression |unit |integration |smoke |coverage )?tests?\b.{0,25}\bpasses?\b)\b"),
     ("scheduled", r"\b(scheduled|set up (a|the) (cron(\s+job)?|reminder|recurring\b)|created (a|the) cron|booked\s+(the|an?|your|\w+s)\b|"
@@ -1629,6 +1638,16 @@ _YOU_HAVE_CHECKED_SPAN = re.compile(
     r"\byou (?:now )?have\b[^.!?]*?\b(?:verified|validated|restorable)\b[^.!?]{0,30}", _I
 )
 
+# Item 57, guard (b): a conditional lead-in word right before "you have ... verified"
+# makes the whole thing advice, not a receipt (invented: "If you have a restorable
+# snapshot, we can roll back.", "Once you have verified the archive, delete the old
+# one."). The lead word sits BEFORE the match's own start, so a lookahead inside the
+# _CLAIM_PATTERNS regex can't see it; checked separately against the text immediately
+# preceding the match in extract_claims.
+_YOU_HAVE_CONDITIONAL_LEAD = re.compile(
+    r"\b(if|unless|once|when|whenever|should|until)\s*$", _I
+)
+
 
 def _has_partial_count(sent: str) -> bool:
     """True when *sent* names an uneven pass count ("4 of 5", "3/7") or an "all but"
@@ -1744,6 +1763,15 @@ def extract_claims(reply: str) -> list[Claim]:
                 continue
             if kind == "deployed" and _NON_DEPLOY_RELEASE.search(sent):
                 continue
+            # Item 57, guard (b): a conditional lead-in word ("if"/"once"/"should"/...)
+            # right before the "you have ... verified" span makes it advice, not a
+            # receipt. The lead word sits before m.start(), outside the regex's own
+            # reach, so it is checked here against the text immediately preceding the
+            # match rather than inside _CLAIM_PATTERNS.
+            if kind == "tested" and re.match(r"^you\b", m.group(0), _I):
+                lead = sent[max(0, m.start() - 15):m.start()]
+                if _YOU_HAVE_CONDITIONAL_LEAD.search(lead):
+                    continue
             if kind in _ONE_PER_SENTENCE and (gi, kind) in seen_group:
                 continue
             if kind in _ONE_PER_REPLY and kind in seen_kind_reply:

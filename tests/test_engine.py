@@ -3585,3 +3585,73 @@ class VerificationClaimsSliceTwoYouHave(unittest.TestCase):
 
     def test_you_have_a_backup_with_no_check_word_is_not_a_claim(self):
         self.assertNotIn("tested", self._kinds("You have a backup from Tuesday."))
+
+
+class YouHaveCheckedPrecisionGuard(unittest.TestCase):
+    """Item 57: the slice-2(iii) "you (now)? have ... verified/validated/restorable"
+    alternative had no negation, modal or conditional guard, so an honest admission,
+    an obligation ("have to") or a conditional read as a tested claim. Invented
+    examples only."""
+
+    def _kinds(self, text):
+        return [c.kind for c in engine.extract_claims(text)]
+
+    # Negatives that must now stay silent.
+
+    def test_you_have_not_verified_the_backup_yet_is_not_a_claim(self):
+        self.assertNotIn(
+            "tested", self._kinds("You have not verified the backup yet.")
+        )
+
+    def test_you_have_to_make_sure_export_validated_by_finance_is_not_a_claim(self):
+        self.assertNotIn(
+            "tested",
+            self._kinds(
+                "You have to make sure the export is validated by finance before Monday."
+            ),
+        )
+
+    def test_if_you_have_a_restorable_snapshot_is_not_a_claim(self):
+        self.assertNotIn(
+            "tested",
+            self._kinds("If you have a restorable snapshot, we can roll back."),
+        )
+
+    # Positives from the 15:20 decision that must keep extracting tested.
+
+    def test_yes_you_have_clean_restorable_archive_still_a_claim(self):
+        self.assertIn(
+            "tested",
+            self._kinds("Yes, you have a clean, restorable archive of the old schema."),
+        )
+
+    def test_yes_colon_you_now_have_verified_restorable_snapshot_still_a_claim(self):
+        self.assertIn(
+            "tested",
+            self._kinds("Yes: you now have a verified, restorable snapshot."),
+        )
+
+    def test_confirmed_you_have_validated_export_still_a_claim(self):
+        self.assertIn(
+            "tested",
+            self._kinds("Confirmed, you have a validated export in the bucket."),
+        )
+
+    # Negatives that already pass today and must stay silent.
+
+    def test_do_you_have_a_verified_copy_is_a_question_not_a_claim(self):
+        self.assertNotIn(
+            "tested", self._kinds("Do you have a verified copy of the export?")
+        )
+
+    def test_once_you_have_verified_the_archive_is_not_a_claim(self):
+        self.assertNotIn(
+            "tested",
+            self._kinds("Once you have verified the archive, delete the old one."),
+        )
+
+    def test_you_should_have_a_verified_copy_before_cutover_is_not_a_claim(self):
+        self.assertNotIn(
+            "tested",
+            self._kinds("You should have a verified copy before you cut over."),
+        )
