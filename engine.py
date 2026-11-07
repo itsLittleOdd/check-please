@@ -77,6 +77,13 @@ class Evidence:
                                # command only ran a single test file/module, -k expr, node id
                                # (::name) or --grep filter, never the whole suite. Empty for a
                                # whole-suite run or any non-"tested" evidence.
+    fail_text: str = ""        # item 48 (GATE DATA FILES): the failed call's own result text
+                               # (capped, terminal/execute_code only), so _find_edited_proof can
+                               # check whether a later write's filename was actually NAMED by
+                               # this gate's own refusal (an allowlist/approval/lock file quoted
+                               # in the error), not just guessed from a closed path-shape list.
+                               # Empty for a successful call or any call whose text was not
+                               # captured.
 
 
 _TEST_CMD = re.compile(
@@ -259,6 +266,55 @@ def _is_proof_file_path(path: str) -> bool:
     return bool(_PROOF_FILE_DIR.search(low) or _PROOF_FILE_NAME.search(low) or _PROOF_STATE_DIR.search(low))
 
 
+# Item 48 (GATE DATA FILES): the proof-file set above covers code (tests, CI/build scripts,
+# hooks). A gate can also be defeated by editing the DATA it reads as policy instead of the
+# check itself: an allowlist/enum/type file the gate validates against, an approval or
+# sign-off record the gate requires before it passes, a lock/checksum file the gate compares
+# against, or the request/state file of the tool that refused. Closed, invented filename
+# shapes for those four categories only (never file content, which classify_call does not
+# retain). A filename matching one of these shapes is not proof-file-worthy by itself --
+# almost any config file could coincidentally match one of these broad extensions -- so this
+# is paired with _named_in_failure_output below: the file must also be the one the FAILING
+# gate's own output actually named, so a coincidental filename never counts.
+_GATE_DATA_NAME = re.compile(
+    r"(^|/)([\w.-]+\.lock$|[\w.-]*checksums?[\w.-]*$|[\w.-]*allow-?list[\w.-]*\.(json|ya?ml|txt)$|"
+    r"[\w.-]*\benum\b[\w.-]*\.(json|ya?ml|txt)$|[\w.-]*\btypes?\b[\w.-]*\.(json|ya?ml)$|"
+    r"[\w.-]*approv(ed|al)[\w.-]*\.(json|ya?ml|txt)?$|[\w.-]*\brequest[\w.-]*\.(json|ya?ml|txt)$|"
+    r"[\w.-]*\.state$)", _I)
+
+
+def _is_gate_data_name(path: str) -> bool:
+    if not path:
+        return False
+    low = path.lower().rsplit("?", 1)[0].rsplit("#", 1)[0]
+    return bool(_GATE_DATA_NAME.search(low))
+
+
+def _named_in_failure_output(path: str, fail_text: str) -> bool:
+    """True when *path*'s own basename (with or without its extension) appears as a whole
+    word in the failing call's own output text -- the gate itself named this file, so editing
+    it is editing the gate's policy data, not writing an unrelated file that happens to match
+    one of the closed shapes above."""
+    if not path or not fail_text:
+        return False
+    base = _basename(path)
+    if not base:
+        return False
+    stem = base.rsplit(".", 1)[0] if "." in base else base
+    for needle in {base, stem}:
+        if len(needle) > 2 and re.search(r"\b" + re.escape(needle) + r"\b", fail_text, _I):
+            return True
+    return False
+
+
+def _is_gate_data_path(path: str, fail_text: str) -> bool:
+    """Item 48: True when *path* both looks like a gate-data shape (allowlist/enum/type,
+    approval record, lock/checksum, or request/state file) AND was actually named in the
+    failing gate's own output -- both conditions required, so a merely-similarly-named file
+    the gate never mentioned does not count."""
+    return _is_gate_data_name(path) and _named_in_failure_output(path, fail_text)
+
+
 def _disclosed_edit(reply: str, path_detail: str) -> bool:
     """Item 43 disclosure exception: if the reply names the edited proof file (by its own
     basename) or plainly says it changed the script/test/tool, the edit is not hidden, so the
@@ -301,7 +357,8 @@ def _find_edited_proof(all_evidence: list, backers: list):
               if e.kind in {"saved", "saved_code", "drafted"} and e.ok
               and last_fail.seq < e.seq < last_pass.seq]
     for w in writes:
-        if _is_proof_file_path(w.path or w.detail):
+        target = w.path or w.detail
+        if _is_proof_file_path(target) or _is_gate_data_path(target, last_fail.fail_text):
             return (last_fail, last_pass, w)
     return None
 
@@ -382,6 +439,16 @@ _HTTP_ERROR_STATUS = re.compile(r"\bhttp/\d(?:\.\d)?\"?\s+([45]\d{2})\b", _I)
 # _find_edited_proof still requires its own real failed call to exist).
 _ENV_ERROR_TEXT = re.compile(
     r"\bcommand not found\b|\bno module named\b|\bexit code 127\b|\bexited 127\b", _I)
+
+
+def _capture_fail_text(ok: bool, result: Any) -> str:
+    """Item 48: the failed call's own output text, capped, for _is_gate_data_path's
+    name-match. Only captured on failure (a success never needs it); empty string otherwise."""
+    if ok:
+        return ""
+    data = _as_dict(result)
+    text_blob = _result_text_blob(data) if data else str(result or "")
+    return text_blob[:1000]
 
 
 def _is_env_error(result: Any) -> bool:
@@ -820,7 +887,8 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
             return None
         narrow = _targeted_test_scope(cmd) if kind == "tested" else ""
         return Evidence(kind, ok, name, short, seq, ts, reason, env_error=env_error,
-                         narrow_scope=narrow, cmd=cmd[:2000]) if kind else None
+                         narrow_scope=narrow, cmd=cmd[:2000],
+                         fail_text=_capture_fail_text(ok, result)) if kind else None
 
     if low in _CODE_TEXT_TOOLS:
         # execute_code runs Python directly; browser_exec runs Python against browser helpers.
@@ -833,7 +901,8 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
         if kind is None and ok and _DELETE_OUTPUT.search(str(result or "")):
             kind = "deleted"
         return Evidence(kind, ok, name, short, seq, ts, reason,
-                         env_error=(not ok) and _is_env_error(result)) if kind else None
+                         env_error=(not ok) and _is_env_error(result),
+                         fail_text=_capture_fail_text(ok, result)) if kind else None
 
     if low in _WRITE_TOOLS:
         path = str(a.get("path") or a.get("file_path") or a.get("filename") or "")
