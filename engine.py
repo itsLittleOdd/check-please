@@ -167,6 +167,41 @@ def _program_index(words: list) -> int:
     return j if j < len(words) else 0
 
 
+# Item 56 (Arlo lead tick 15:20): a check program literally named "ci" is not covered by
+# _CHECK_WORD. "ci" is too short/common to search anywhere in a command (that is the exact
+# item 49 false-alarm shape: `gh run list --workflow ci`, `git log --grep ci`, `circus`,
+# `ci-tools`). Narrow treatment: "ci" counts as a check word only when it IS the command's
+# own name (the program token itself, stripped of a path and one script extension) or the
+# target after a known task runner (make ci, npm run ci, yarn ci, pnpm ci, just ci, task ci).
+# Exact-token equality throughout, never a substring/word-boundary regex, so "ci-tools",
+# "circus" and "--workflow ci" never match.
+_CI_RUNNERS_DIRECT = {"make", "just", "task"}
+_CI_RUNNERS_NPM = {"npm", "yarn", "pnpm"}
+
+
+def _ci_basename_match(tok: str) -> bool:
+    base = tok.rsplit("/", 1)[-1]
+    base = re.sub(r"\.(py|js|mjs|cjs|ts|rb|sh|pl)$", "", base, flags=_I)
+    return base.lower() == "ci"
+
+
+def _is_ci_command(words: list) -> bool:
+    if not words:
+        return False
+    prog = _program_index(words)
+    if prog < len(words) and _ci_basename_match(_strip_quotes(words[prog])):
+        return True
+    first = _strip_quotes(words[0]).rsplit("/", 1)[-1].lower()
+    if first in _CI_RUNNERS_DIRECT and len(words) > 1 and _strip_quotes(words[1]).lower() == "ci":
+        return True
+    if first in _CI_RUNNERS_NPM:
+        if len(words) > 2 and _strip_quotes(words[1]).lower() == "run" and _strip_quotes(words[2]).lower() == "ci":
+            return True
+        if first in ("yarn", "pnpm") and len(words) > 1 and _strip_quotes(words[1]).lower() == "ci":
+            return True
+    return False
+
+
 def _check_cmd_match(text: str) -> bool:
     if _CHECK_FLAGS.search(text or ""):
         return True
@@ -174,6 +209,8 @@ def _check_cmd_match(text: str) -> bool:
         words = _stage_words(stage)
         if not words:
             continue
+        if _is_ci_command(words):
+            return True
         prog = _program_index(words)
         for i, w in enumerate(words):
             tok = _strip_quotes(w)
