@@ -3454,3 +3454,85 @@ class AllSetForNarrowScheduledShape(unittest.TestCase):
     def test_noon_and_midnight_count_as_clock_time(self):
         self.assertIn("scheduled", self._kinds("You're all set for the call at noon."))
         self.assertIn("scheduled", self._kinds("You're all set for pickup at midnight."))
+
+
+class VerificationClaims(unittest.TestCase):
+    """Item 50, slice 1 (core shapes): passed-all-checks, widened checks-pass,
+    bare is/are/'s verified-validated-restorable, confirmed-it-by-running, and
+    a widened CI passes/passing/passed. Invented examples only. Negatives
+    (future, third-party passive, noun use, still-red) must stay unclaimed."""
+
+    def _kinds(self, text):
+        return [c.kind for c in engine.extract_claims(text)]
+
+    def test_passed_all_the_integrity_checks(self):
+        self.assertIn("tested", self._kinds("I passed all the integrity checks on the export."))
+
+    def test_passed_all_checks_bare(self):
+        self.assertIn("tested", self._kinds("Passed all checks before merging."))
+
+    def test_all_n_sanity_checks_pass(self):
+        self.assertIn("tested", self._kinds("All 12 sanity checks pass on the new build."))
+
+    def test_all_health_checks_passed(self):
+        self.assertIn("tested", self._kinds("All health checks passed after the restart."))
+
+    def test_bare_is_verified(self):
+        self.assertIn("tested", self._kinds("The export is verified."))
+
+    def test_bare_are_restorable(self):
+        self.assertIn("tested", self._kinds("The backups are restorable."))
+
+    def test_contraction_s_validated(self):
+        self.assertIn("tested", self._kinds("The dataset's validated now."))
+
+    def test_yes_answer_is_verified_and_restorable(self):
+        self.assertIn(
+            "tested", self._kinds("Yes, the snapshot is verified and restorable.")
+        )
+
+    def test_confirmed_it_by_running(self):
+        self.assertIn(
+            "tested", self._kinds("I confirmed it by running the restore script end to end.")
+        )
+
+    def test_verified_it_by_re_running(self):
+        self.assertIn("tested", self._kinds("I verified it by re-running the suite."))
+
+    def test_ci_passes_bare(self):
+        self.assertIn("tested", self._kinds("CI passes on the new branch."))
+
+    def test_ci_is_passing(self):
+        self.assertIn("tested", self._kinds("CI is passing now."))
+
+    def test_ci_passed(self):
+        self.assertIn("tested", self._kinds("CI passed on the last push."))
+
+    # Negatives
+
+    def test_will_be_verified_tonight_is_not_a_claim(self):
+        self.assertNotIn("tested", self._kinds("It will be verified tonight."))
+
+    def test_verified_by_the_client_is_not_a_claim(self):
+        self.assertNotIn(
+            "tested", self._kinds("The data is verified by the client, not by us.")
+        )
+
+    def test_restorable_backups_are_kept_is_noun_use_not_a_claim(self):
+        self.assertNotIn(
+            "tested", self._kinds("Restorable backups are kept for 30 days.")
+        )
+
+    def test_the_plan_is_valid_is_not_a_claim(self):
+        self.assertNotIn("tested", self._kinds("The plan is valid."))
+
+    def test_ci_is_still_red_is_not_a_claim(self):
+        self.assertNotIn("tested", self._kinds("CI is still red."))
+
+    def test_ci_will_pass_once_legal_signs_off_is_not_a_claim(self):
+        self.assertNotIn(
+            "tested", self._kinds("CI will pass once legal signs off on the release.")
+        )
+
+    def test_fresh_coffee_is_not_a_claim(self):
+        self.assertNotIn("tested", self._kinds("Fresh coffee is in the kitchen."))
