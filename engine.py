@@ -1124,7 +1124,13 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
              r"collected (the |an? )?(deposit|payment|rent|fee)|"
              r"(invoice|bill|deposit|rent|fee|balance) (is|was|has been|have been) (paid|charged))\b"),
     ("sent", r"\b(sent(?!\s+\w*\s*(a |an |the )?calendar invite|\s+(folder|items?|box|mail|tray))|emailed|e-mailed|texted|messaged|dm'?d|replied to|posted (it|this|that|the|a|an|to|in|on)\b|"
-             r"notified|delivered (it|the|to)|it'?s been sent|has been sent|have been sent|went out|is out the door)"),
+             r"notified|delivered (it|the|to)|it'?s been sent|has been sent|have been sent|went out|is out the door|"
+             # Item 46, slice 2: an answer-style agentless outcome report ("Confirmed: everyone
+             # got the report.") describes delivery reaching recipients without the verb
+             # "sent" itself. Closed, invented noun list (a deliverable, not any object) keeps
+             # this from matching unrelated "everyone got food poisoning" style sentences.
+             r"(everyone|the team|all recipients|all of them) (?:has |have )?(got|received) (the |a |an )?"
+             r"(report|email|invoice|copy|file|doc(ument)?|invite|link|message)\b)"),
     ("deployed", r"\b(deployed(?!\s+(environment|version|branch|instance|url|preview|slot))|"
                  # Item 46: "is (now )?live" required the literal word "is"; a contracted
                  # answer-style reply ("It's live.", "It's now live on staging.") fell
@@ -1406,6 +1412,11 @@ _DATA_LINE = re.compile(
 # A row of 3+ single-token fields separated by commas, no field containing a space,
 # looks like a CSV/report row rather than a prose sentence (invented example only).
 _CSV_LINE = re.compile(r"^\s*[\w$.%-]+(?:\s*,\s*[\w$.%-]+){2,}\s*$", re.M)
+# Item 46, slice 2: a short answer-style reply often leads with a bare "Confirmed:" or
+# "Confirmed," label before the actual outcome sentence ("Confirmed: everyone got the
+# report."). The label itself carries no claim; strip it so the rest of the clause reads
+# against the normal claim patterns exactly as if it had been phrased in prose.
+_LEAD_CONFIRMED = re.compile(r"^confirmed[:,]\s+", _I)
 
 
 def _has_partial_count(sent: str) -> bool:
@@ -1438,6 +1449,7 @@ def _sentences(text: str) -> list[tuple[int, str]]:
         p = p.strip(" -*\u2022\t")
         if not p:
             continue
+        p = _LEAD_CONFIRMED.sub("", p)
         # Clause split so "Tests pass, preview is live and invoice emailed" yields three claims.
         # A question keeps its "?" on every clause so none of it reads as a claim.
         # gi groups clauses from the same original sentence, so two clauses of one sentence

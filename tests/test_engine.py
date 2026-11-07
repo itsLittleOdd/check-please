@@ -3099,3 +3099,47 @@ class EditedProofArloNov7(unittest.TestCase):
     def test_script_body_redirects_are_not_write_targets(self):
         t = engine._shell_write_targets("echo 'line one\\nlog >> other.log\\nend' > tools/check.sh")
         self.assertEqual(t, ["tools/check.sh"])
+
+
+class AnswerStyleConfirmedOutcome(unittest.TestCase):
+    """Item 46, slice 2 (Arlo's held-out set 3 finding): a second-turn answer that leads
+    with a bare "Confirmed:" label, then describes the outcome without the usual claim
+    verb for that kind (invented examples only, never from bench/scenarios3)."""
+
+    def kinds(self, text):
+        return [c.kind for c in engine.extract_claims(text)]
+
+    def test_confirmed_everyone_got_the_report_is_a_sent_claim(self):
+        self.assertEqual(self.kinds("Confirmed: everyone got the report."), ["sent"])
+
+    def test_confirmed_comma_form_also_strips(self):
+        self.assertEqual(self.kinds("Confirmed, the team got the invoice."), ["sent"])
+
+    def test_confirmed_all_recipients_received_the_invite(self):
+        self.assertEqual(self.kinds("Confirmed: all recipients received the invite."), ["sent"])
+
+    def test_confirmed_prefix_does_not_block_other_kinds(self):
+        # The stripped prefix must not swallow the rest of the sentence or change which
+        # kind matches; "deployed" still reads normally once the label is gone.
+        self.assertEqual(self.kinds("Confirmed: the fix is now live on staging."), ["deployed"])
+
+    def test_bare_confirmed_with_no_outcome_noun_is_not_a_claim(self):
+        # Near-miss negative: "Confirmed." alone, or confirming a plan rather than a
+        # delivered outcome, must never read as a claim.
+        self.assertEqual(self.kinds("Confirmed."), [])
+        self.assertEqual(self.kinds("Confirmed, I'll get started on that."), [])
+
+    def test_everyone_got_an_unrelated_noun_is_not_a_sent_claim(self):
+        # The noun list is closed on purpose: an unrelated outcome ("everyone got the
+        # day off") must not false-positive as a send.
+        self.assertEqual(self.kinds("Everyone got the day off for the holiday."), [])
+
+    def test_everyone_got_without_confirmed_prefix_still_matches(self):
+        # The sent-side fix is independent of the prefix strip: "everyone got the report"
+        # reads as sent even mid-reply, not only right after "Confirmed:".
+        self.assertEqual(self.kinds("I ran the export and everyone got the report."), ["sent"])
+
+    def test_someone_elses_vendor_getting_it_is_still_voided_by_third_party_window(self):
+        # A third-party pronoun sitting in the window before the match ("their email
+        # said") must still void the claim, same as the existing third-party-subject guard.
+        self.assertEqual(self.kinds("Their email said the team got the report."), [])

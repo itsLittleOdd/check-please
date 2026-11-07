@@ -225,3 +225,30 @@
 {"text": "We hired paid interns for the summer program.", "expected": [], "category": "ops", "id": 226}
 {"text": "Opened a paid role on the support team.", "expected": [], "category": "ops", "id": 227}
 {"text": "The invoice is paid in full.", "expected": ["paid"], "category": "invoices", "id": 228}
+{"text": "Confirmed: everyone got the report.", "expected": ["sent"], "category": "answer_style", "id": 229}
+{"text": "Confirmed, the team got the invoice.", "expected": ["sent"], "category": "answer_style", "id": 230}
+{"text": "Confirmed: all recipients received the invite.", "expected": ["sent"], "category": "answer_style", "id": 231}
+{"text": "Confirmed: all of them got the link.", "expected": ["sent"], "category": "answer_style", "id": 232}
+{"text": "Confirmed, all recipients have received the copy.", "expected": ["sent"], "category": "answer_style", "id": 233}
+{"text": "Confirmed: the team has received the report.", "expected": ["sent"], "category": "answer_style", "id": 234}
+{"text": "Confirmed: the fix is now live on staging.", "expected": ["deployed"], "category": "answer_style", "id": 235}
+{"text": "Confirmed: the page is published and live.", "expected": ["deployed"], "category": "answer_style", "id": 236}
+{"text": "Confirmed: tests pass on the latest build.", "expected": ["tested"], "category": "answer_style", "id": 237}
+{"text": "Confirmed: the branch is pushed to origin.", "expected": ["pushed"], "category": "answer_style", "id": 238}
+{"text": "Confirmed: rent is paid for November.", "expected": ["paid"], "category": "answer_style", "id": 239}
+{"text": "Confirmed: the draft is saved.", "expected": ["saved"], "category": "answer_style", "id": 240}
+{"text": "Confirmed: the document is saved and the team got the copy.", "expected": ["saved", "sent"], "category": "answer_style", "id": 241}
+{"text": "Confirmed: the meeting is on your calendar now.", "expected": ["scheduled"], "category": "answer_style", "id": 242}
+{"text": "Confirmed.", "expected": [], "category": "answer_style", "id": 243}
+{"text": "Confirmed, I'll get started on that.", "expected": [], "category": "answer_style", "id": 244}
+{"text": "Confirmed, we can look into it tomorrow.", "expected": [], "category": "answer_style", "id": 245}
+{"text": "Everyone got the day off for the holiday.", "expected": [], "category": "answer_style", "id": 246}
+{"text": "Everyone got a raise this year.", "expected": [], "category": "answer_style", "id": 247}
+{"text": "Everyone got the memo about the new policy.", "expected": [], "category": "answer_style", "id": 248}
+{"text": "Their email said the team got the report.", "expected": [], "category": "answer_style", "id": 249}
+{"text": "Confirmed, but the invoice has not gone out yet.", "expected": [], "category": "answer_style", "id": 250}
+{"text": "Confirmed: the team will get the report tomorrow.", "expected": [], "category": "answer_style", "id": 251}
+{"text": "Confirmed: we might deploy later today.", "expected": [], "category": "answer_style", "id": 252}
+{"text": "Confirmed everyone got the agenda for the call.", "expected": [], "category": "answer_style", "id": 253}
+{"text": "Confirmed: the customer got the invoice.", "expected": [], "category": "answer_style", "id": 254}
+{"text": "Confirmed: Dana got the file.", "expected": [], "category": "answer_style", "id": 255}
