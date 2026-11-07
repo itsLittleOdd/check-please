@@ -925,6 +925,44 @@ def claim_target(kind: str, text: str) -> Optional[str]:
     return None
 
 
+# Item 29(a): short claim labels for the Desktop pane row (backlog's own examples: "Tests ran
+# clean", "Invoice draft saved", "Invoice emailed to Dana"). A plain kind word, never a guessed
+# object name beyond what claim.target already extracted -- the full sentence stays available
+# on hover/expand (rowDetailText in desktop/plugin.js) for anything this label can't show.
+_KIND_LABELS = {
+    "tested": "Tests ran clean",
+    "sent": "Message sent",
+    "deployed": "Deploy went live",
+    "pushed": "Changes pushed",
+    "committed": "Changes committed",
+    "saved": "File saved",
+    "saved_code": "Code saved",
+    "drafted": "Draft saved",
+    "paid": "Payment made",
+    "scheduled": "Job scheduled",
+    "deleted": "File deleted",
+}
+
+
+def claim_label(claim: "Claim") -> str:
+    """A short display label for one claim row, built from its kind and (when present) its
+    own extracted target (item 39's claim.target) only -- never a free-text guess from the
+    sentence. Falls back to the kind word itself for an unlisted kind."""
+    base = _KIND_LABELS.get(claim.kind, claim.kind.replace("_", " ").capitalize())
+    target = claim.target
+    if not target:
+        return base
+    if claim.kind == "sent":
+        return f"{base} to {target}"
+    if claim.kind in ("pushed", "committed"):
+        return f"{base} to {target}"
+    if claim.kind == "deployed":
+        return f"{base} on {target}"
+    if claim.kind in ("saved", "saved_code", "drafted"):
+        return f"{target} saved"
+    return base
+
+
 def evidence_target(kind: str, ev: "Evidence") -> Optional[str]:
     """Extract the target a piece of evidence actually touched, or None when unknowable.
     Reads only ev.detail/ev.path (already-classified, display-safe text), never raw args."""
@@ -1653,6 +1691,7 @@ def verdict_to_dict(v: Verdict) -> dict:
         "kind": v.claim.kind,
         "text": v.claim.text,
         "phrase": v.claim.phrase,
+        "label": claim_label(v.claim),
         "status": v.status,
         "note": v.note,
         "proof": (v.proof.detail or v.proof.tool) if v.proof is not None else None,

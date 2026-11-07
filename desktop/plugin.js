@@ -105,10 +105,14 @@ function tallyText(claims) {
 // verdict_to_dict() already sends (claim.proof, claim.note) — no relative-time field exists
 // in that payload today, so this reports the proof string or the flagged reason honestly
 // rather than inventing a timestamp the backend doesn't send.
+// Item 29(a): the row now shows a short label, not the raw mid-sentence fragment, so the
+// full claim.text (the actual sentence) goes here first, ahead of proof/reason.
 function rowDetailText(claim) {
-  if (claim.proof) return `Proof: ${claim.proof}`
-  if (claim.note) return `Why flagged: ${claim.note}`
-  return 'No proof recorded.'
+  const parts = [claim.text]
+  if (claim.proof) parts.push(`Proof: ${claim.proof}`)
+  else if (claim.note) parts.push(`Why flagged: ${claim.note}`)
+  else parts.push('No proof recorded.')
+  return parts.join(' \u2014 ')
 }
 
 function ClaimRow({ claim, expanded, onToggle }) {
@@ -140,7 +144,15 @@ function ClaimRow({ claim, expanded, onToggle }) {
           // min-w-0 is required alongside truncate in a flex row: without it flex items default
           // to min-width:auto and the ellipsis never kicks in, so long claim text overflows the
           // 280px pane at narrow widths instead of truncating (item 12 finding, fixed here).
-          jsx('span', { className: 'min-w-0 flex-1 truncate', children: claim.text }),
+          // Item 29(a): a short built label (engine.claim_label, e.g. "Tests ran clean",
+          // "invoice.md saved"), not the raw mid-sentence fragment; the full sentence is one
+          // click/Enter away via rowDetailText. Falls back to claim.text if an older backend
+          // build has not sent "label" yet, so a stale server never renders a blank row.
+          jsx('span', {
+            className: 'min-w-0 flex-1 truncate',
+            title: claim.text,
+            children: claim.label || claim.text
+          }),
           jsx('span', {
             style: { color: style.color },
             className: 'shrink-0 text-xs font-medium',

@@ -2894,6 +2894,46 @@ class TargetMatching(unittest.TestCase):
         self.assertEqual(v[0].status, "BACKED")
 
 
+class ClaimLabel(unittest.TestCase):
+    """Item 29(a): a short built label for the Desktop pane row, from claim.kind and
+    claim.target only (item 39's own extractor) -- never a free guess from the sentence."""
+
+    def _claim(self, kind, text, target=None):
+        return engine.Claim(kind=kind, text=text, phrase=kind, target=target)
+
+    def test_tested_has_no_target_and_uses_the_fixed_label(self):
+        self.assertEqual(engine.claim_label(self._claim("tested", "Tests pass.")), "Tests ran clean")
+
+    def test_sent_with_target_names_the_recipient(self):
+        c = self._claim("sent", "Emailed the invoice to dana@example.com.", target="dana@example.com")
+        self.assertEqual(engine.claim_label(c), "Message sent to dana@example.com")
+
+    def test_sent_with_no_target_falls_back_to_the_base_label(self):
+        self.assertEqual(engine.claim_label(self._claim("sent", "Sent.")), "Message sent")
+
+    def test_saved_with_target_names_the_file(self):
+        c = self._claim("saved", "Saved invoice.md.", target="invoice.md")
+        self.assertEqual(engine.claim_label(c), "invoice.md saved")
+
+    def test_deployed_with_target_names_the_environment(self):
+        c = self._claim("deployed", "Deployed to staging.", target="staging")
+        self.assertEqual(engine.claim_label(c), "Deploy went live on staging")
+
+    def test_pushed_with_target_names_the_branch(self):
+        c = self._claim("pushed", "Pushed to main.", target="main")
+        self.assertEqual(engine.claim_label(c), "Changes pushed to main")
+
+    def test_unlisted_kind_falls_back_to_a_titled_kind_word(self):
+        c = self._claim("nonexistent_kind", "Did a thing.")
+        self.assertEqual(engine.claim_label(c), "Nonexistent kind")
+
+    def test_verdict_to_dict_includes_the_label(self):
+        v = engine.check_turn("Tests pass.", [ev("terminal", {"command": "pytest"})])[0]
+        d = engine.verdict_to_dict(v)
+        self.assertEqual(d["label"], "Tests ran clean")
+        self.assertIn("text", d)  # full sentence still present for hover/expand
+
+
 class PartialSuite(unittest.TestCase):
     """Backlog item 44: a whole-suite claim backed only by a targeted run is PARTIAL, not
     BACKED, but ONLY when this same turn also ran a different "tested" call earlier that

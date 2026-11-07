@@ -291,6 +291,49 @@ await checkAsync('clicking a row expands it to show the proof string (item 29e)'
   assert.ok(!textOf(tree).includes('Proof: python3'), 'second click should collapse the row')
 })
 
+await checkAsync('row shows the built label when the backend sends one, full sentence on expand (item 29a)', async () => {
+  sdk.host.state.focusedSessionId = 'sess-9b'
+  const payload = {
+    claims: [
+      { kind: 'tested', text: 'ran the tests, all green across the whole suite', label: 'Tests ran clean', status: 'BACKED' }
+    ],
+    backed: 1,
+    total: 1
+  }
+  const ctx = { rest: async () => payload }
+  const registered = register_(ctx)
+  const pane = registered.find((r) => r.id === 'pane')
+  render(pane.render())
+  await settle()
+  let tree = render(pane.render())
+  // Collapsed: the short label shows, not the raw mid-sentence fragment.
+  assert.match(textOf(tree), /Tests ran clean/)
+  assert.ok(!textOf(tree).includes('ran the tests, all green'), 'collapsed row should show the label, not the raw sentence')
+  const rowButtons = collect(tree, 'div').filter((d) => d.props.role === 'button')
+  rowButtons[0].props.onClick()
+  tree = render(pane.render())
+  // Expanded: the full sentence is now visible too.
+  assert.match(textOf(tree), /ran the tests, all green across the whole suite/)
+})
+
+await checkAsync('row falls back to claim.text when the backend has no label yet (item 29a)', async () => {
+  sdk.host.state.focusedSessionId = 'sess-9c'
+  const payload = {
+    claims: [
+      { kind: 'tested', text: 'ran the tests, all green', status: 'BACKED' }
+    ],
+    backed: 1,
+    total: 1
+  }
+  const ctx = { rest: async () => payload }
+  const registered = register_(ctx)
+  const pane = registered.find((r) => r.id === 'pane')
+  render(pane.render())
+  await settle()
+  const tree = render(pane.render())
+  assert.match(textOf(tree), /ran the tests, all green/, 'no label field should still render the raw sentence, never a blank row')
+})
+
 await checkAsync('Enter on a row expands it to show the flagged reason when there is no proof (item 29e)', async () => {
   sdk.host.state.focusedSessionId = 'sess-10'
   const payload = {
