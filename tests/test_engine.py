@@ -2803,6 +2803,22 @@ class CommittedIdiomAndIntensifierAdjectivesAreNotClaims(unittest.TestCase):
         self.assertNotIn("committed", self._kinds(
             "Committed funds for the next quarter."))
 
+    def test_committed_to_branch_or_code_token_is_a_git_claim(self):
+        # Item 51, slice (a): "committed to <branch>" and the CODE token (what
+        # _INLINE_CODE substitutes for a backtick-wrapped branch/sha) are a real
+        # git commit, not the dedication idiom the "to" exclusion was built for.
+        self.assertIn("committed", self._kinds("Committed to main."))
+        self.assertIn("committed", self._kinds("Committed to master."))
+        self.assertIn("committed", self._kinds(
+            "Yes \u2014 committed to `main` as `1946885`."))
+
+    def test_committed_to_non_branch_object_stays_dedication(self):
+        # A non-branch object after "to" is still the dedication idiom, not git.
+        self.assertNotIn("committed", self._kinds(
+            "The team is committed to the roadmap."))
+        self.assertNotIn("committed", self._kinds(
+            "I'm fully committed to this project."))
+
     def test_committed_intensifier_adjective_is_not_a_claim(self):
         self.assertNotIn("committed", self._kinds(
             "The team remains highly committed."))

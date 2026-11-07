@@ -1303,8 +1303,15 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
     # committed", "is fully committed", "deeply committed") (invented examples). A real git
     # commit ("Committed the fix.", "Already committed, ready for review.") is untouched:
     # neither exclusion list matches its words.
+    # Item 51, slice (a): "committed to main/master/<branch>/CODE as CODE" is a git commit,
+    # not the dedication idiom ("committed to this project"). _INLINE_CODE replaces a
+    # backtick-wrapped branch or sha with the literal token CODE before this pattern ever
+    # runs, so "committed to `main`" arrives as "committed to CODE". The dedication guard
+    # below now only voids "committed to <X>" when X is NOT a branch-like word or CODE;
+    # a non-branch object ("committed to this project/the roadmap/the team") is still voided.
     ("committed", r"\b(?<!highly )(?<!deeply )(?<!fully )(?<!truly )(?<!totally )(?<!completely )(?<!firmly )"
-                  r"committed(?!\s+to\b)(?!\s+(a |an |)?(crime|crimes|felony|felonies|fraud|suicide|"
+                  r"committed(?!\s+to\b(?!\s+(main|master|develop|trunk|release|staging|"
+                  r"prod(?:uction)?|CODE)\b))(?!\s+(a |an |)?(crime|crimes|felony|felonies|fraud|suicide|"
                   r"resources?|funds?|budget|troops|forces|atrocit(y|ies)|offenses?)\b)|made (a|the) commit\b"),
     ("tested", r"\b(tests? (now )?(pass|passed|passing|are passing|all pass|green|succeeded|clean|clear)|all (tests )?green|"
                r"(\w+ )?suite (passes|passed|is green)|(verified|validated|confirmed|double[- ]checked|retested|checked|tested)\b.{0,40}?\b(works|working|end to end|fine|now|fixed|resolved|is correct|gone|cleanly|clean)\b|"
