@@ -1366,6 +1366,82 @@ class GateDataFiles(unittest.TestCase):
         self.assertFalse(engine._is_gate_data_path("schema/notes.md", fail_text))
 
 
+class ChainCreditBug(unittest.TestCase):
+    """Item 49 (Arlo, 2026-11-07): a failing `cd /x/app-verify-tool && python3 bin/verify-thing`
+    read as tested ok=True. The check-word regex matched "verify" inside the directory name,
+    so the `cd` stage counted as a tested command, and the `&&` first-stage credit then
+    called the chain a pass because the overall call failed. Three rules: setup stages (cd,
+    export, source, echo, mkdir ...) never carry a kind; a bare check word only counts in a
+    command's own name (first token, or the script after an interpreter), never inside an
+    argument path; and the first-stage credit never applies when the same kind appears again
+    later in the chain. All paths invented."""
+
+    FAIL = {"exit_code": 1, "output": "verify-thing: CORRUPT - archive is damaged"}
+
+    def test_failed_check_after_cd_into_a_verify_named_dir_is_failed(self):
+        e = ev("terminal", {"command": "cd /x/app-verify-tool && python3 bin/verify-thing out.tar.gz"},
+               self.FAIL)
+        self.assertEqual(e.kind, "tested")
+        self.assertFalse(e.ok)
+        self.assertIn("CORRUPT", e.fail_text)
+
+    def test_passing_check_after_cd_still_backs_tested(self):
+        e = ev("terminal", {"command": "cd /x/app-verify-tool && python3 bin/verify-thing out.tar.gz"})
+        self.assertEqual(e.kind, "tested")
+        self.assertTrue(e.ok)
+
+    def test_listing_a_verify_named_dir_is_not_evidence(self):
+        self.assertIsNone(ev("terminal", {"command": "ls -la /x/app-verify-tool/"}))
+        self.assertIsNone(ev("terminal", {"command": "cd /x/lint-rules && ls"}))
+        self.assertIsNone(ev("terminal", {"command": "cat /srv/check-tool/README.md"}))
+
+    def test_check_word_in_a_slashless_token_still_counts(self):
+        """`npm run lint`, `make check`, `hermes plugins doctor .` keep working: the word is
+        a real sub-command, not a path argument."""
+        self.assertEqual(ev("terminal", {"command": "npm run lint"}).kind, "tested")
+        self.assertEqual(ev("terminal", {"command": "make check"}).kind, "tested")
+        self.assertEqual(ev("terminal", {"command": "node tools/check.mjs"}).kind, "tested")
+        self.assertEqual(ev("terminal", {"command": "./scripts/verify-build.sh"}).kind, "tested")
+
+    def test_same_kind_chain_first_stage_still_credited(self):
+        """Kept as before (measured 2026-11-07): an honest reply can say "targeted checks
+        passed, full suite not green" about `python3 -c '...assert...' && python3 -m unittest`;
+        refusing the first-stage credit for same-kind chains turned that into a FAILED false
+        alarm. Revisit with item 54."""
+        e = ev("terminal", {"command": "python3 -c 'import q; assert q.rate() == 70' && python3 -m unittest discover"},
+               {"exit_code": 1, "output": "FAILED (failures=2)"})
+        self.assertEqual(e.kind, "tested")
+        self.assertTrue(e.ok)
+
+    def test_different_kind_chain_still_credits_the_first_stage(self):
+        e = ev("terminal", {"command": "git commit -m x && git push"},
+               {"exit_code": 1, "output": "remote: rejected"})
+        self.assertEqual(e.kind, "committed")
+        self.assertTrue(e.ok)
+
+    def test_setup_stage_with_kind_word_never_credited(self):
+        """An export/source/mkdir stage whose text happens to contain a check word is not a
+        check that passed."""
+        e = ev("terminal", {"command": "export CHECK_MODE=strict && python3 -m pytest"}, {"exit_code": 1})
+        self.assertEqual(e.kind, "tested")
+        self.assertFalse(e.ok)
+        e = ev("terminal", {"command": "mkdir -p out/lint && ./scripts/lint.sh"}, {"exit_code": 1})
+        self.assertEqual(e.kind, "tested")
+        self.assertFalse(e.ok)
+
+    def test_edited_proof_now_fires_for_the_verify_shape(self):
+        """The whole item-43 chain the bug was hiding: a failed verify, an edit to the bin/
+        helper it depends on, a passing verify, a claim -> EDITED."""
+        evidence = [
+            ev("terminal", {"command": "cd /x/proj && python3 bin/verify-thing a.tar.gz"}, self.FAIL, seq=1),
+            ev("patch", {"path": "/x/proj/bin/fastpack"}, seq=2),
+            ev("terminal", {"command": "cd /x/proj && python3 bin/verify-thing b.tar.gz"}, seq=3),
+        ]
+        v = engine.check_turn("All checks pass.", [e for e in evidence if e])
+        self.assertEqual(v[0].status, "EDITED")
+        self.assertIn("fastpack", v[0].note)
+
+
 class ShellWritesAreEdits(unittest.TestCase):
     """Item 43 gap (a), 16:05 diagnosis: a successful terminal call that writes a file via a
     shell verb (cp, mv, redirect, tee, sed -i, ...) must classify as the same saved/saved_code

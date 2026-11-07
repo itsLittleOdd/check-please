@@ -129,6 +129,78 @@ def _claims_named_subset(text: str) -> bool:
 _CHECK_CMD = re.compile(
     r"\b(check|verify|validate|lint|doctor|smoke|probe|assert)\b|--check\b|\bpy_compile\b|\btsc\b|"
     r"\bbash\s+-n\b|\bsh\s+-n\b|\bzsh\s+-n\b|\bnode\s+--check\b", _I)
+# Item 49 (Arlo, 2026-11-07): the bare check words above matched inside an ARGUMENT path
+# (invented: `cd /x/app-verify-tool`, `ls /srv/check-tool/`), so a plain `cd` into a directory
+# whose name contained "verify" counted as a passing check, and in a failing `cd ... && python3
+# bin/verify-thing` chain the `cd` stage was then credited as the pass. A bare check word now
+# counts only as a command's own name (the first token of a stage, or the script after an
+# interpreter such as python3/node/bash), or in any token with no slash in it (`make check`,
+# `npm run lint`); never inside a slashed argument. The flag forms (--check, py_compile, tsc,
+# bash -n) are unchanged.
+_CHECK_WORD = re.compile(r"\b(check|verify|validate|lint|doctor|smoke|probe|assert)\b", _I)
+_CHECK_FLAGS = re.compile(
+    r"--check\b|\bpy_compile\b|\btsc\b|\bbash\s+-n\b|\bsh\s+-n\b|\bzsh\s+-n\b|\bnode\s+--check\b", _I)
+_INTERPRETERS = {"python", "python3", "python2", "node", "nodejs", "bash", "sh", "zsh", "ruby",
+                 "perl", "php", "deno", "bun", "npx", "uv", "uvx", "pipx", "tsx", "ts-node"}
+_STAGE_SPLIT = re.compile(r"&&|\|\||;|\|")
+
+
+def _stage_words(stage: str) -> list:
+    words = [w for w in stage.strip().split() if not re.match(r"^\w+=", w)]
+    while words and words[0] in ("sudo", "env", "exec", "nohup", "time", "command", "then", "do"):
+        words = words[1:]
+    return words
+
+
+def _program_index(words: list) -> int:
+    """Index of the token that names the real program: 0, or the script after an interpreter
+    (skipping interpreter flags and `run`/`exec`, and the module after -m)."""
+    if not words:
+        return 0
+    if words[0].rsplit("/", 1)[-1].lower() not in _INTERPRETERS or len(words) < 2:
+        return 0
+    j = 1
+    while j < len(words) and words[j] != "-m" and (words[j].startswith("-") or words[j] in ("run", "exec")):
+        j += 1
+    if j < len(words) and words[j] == "-m":
+        j += 1
+    return j if j < len(words) else 0
+
+
+def _check_cmd_match(text: str) -> bool:
+    if _CHECK_FLAGS.search(text or ""):
+        return True
+    for stage in _STAGE_SPLIT.split(text or ""):
+        words = _stage_words(stage)
+        if not words:
+            continue
+        prog = _program_index(words)
+        for i, w in enumerate(words):
+            tok = _strip_quotes(w)
+            if "/" in tok:
+                if i == prog and _CHECK_WORD.search(tok.rsplit("/", 1)[-1]):
+                    return True
+                continue
+            if _CHECK_WORD.search(tok):
+                return True
+    return False
+
+
+# Item 49: a stage that only sets up the shell (cd, export, source, mkdir, echo ...) is never
+# evidence of anything, whatever words its arguments contain.
+_SETUP_PROGRAMS = {"cd", "pushd", "popd", "export", "source", ".", "set", "unset", "echo", "printf",
+                   "mkdir", "true", "false", "test", "[", "sleep", "alias", "ulimit", "umask"}
+
+
+def _stage_kind(stage: str) -> Optional[str]:
+    progs = []
+    for seg in re.split(r"\|\||;|\|", stage):
+        words = _stage_words(seg)
+        if words:
+            progs.append(words[0].rsplit("/", 1)[-1].lower())
+    if progs and all(p in _SETUP_PROGRAMS for p in progs):
+        return None
+    return _scan_ladder(stage)
 _COMMIT_CMD = re.compile(r"\bgit\s+commit\b", _I)
 _PUSH_CMD = re.compile(r"\bgit\s+push\b|\bgh\s+pr\s+(create|merge)\b", _I)
 # Item 43 gap (b), 16:05 diagnosis: the original list only covered a closed set of named
@@ -560,7 +632,7 @@ def _scan_ladder(text: str) -> Optional[str]:
     for kind, pat in _LADDER_PATTERNS:
         if pat.search(text):
             return kind
-    if _CHECK_CMD.search(text):
+    if _check_cmd_match(text):
         return "tested"
     if _DELETE_SCRIPT_CMD.search(text):
         return "deleted"
@@ -615,9 +687,13 @@ def _earliest_chain_kind(cmd: str) -> Optional[str]:
     `&&` only this tick, not `;`/`||` (the smaller slice per the 18:34 entry's design note);
     `;`/`||` chains are an honest, logged gap.
     """
-    kinds = [k for k in (_scan_ladder(part) for part in cmd.split("&&")) if k]
+    kinds = [k for k in (_stage_kind(part) for part in cmd.split("&&")) if k]
     if len(kinds) < 2:
         return None
+    # Item 49 note: a same-kind chain (`pytest a && pytest b`) that fails still credits the
+    # first stage, as before. Arlo measured the stricter rule on 2026-11-07: it turned an
+    # honest "targeted checks passed, full suite not green" reply (stage 1 an inline assert,
+    # stage 2 the suite) into a FAILED false alarm. Revisit together with item 54.
     return kinds[0]
 
 
@@ -675,7 +751,7 @@ def _first_stage_failed(cmd: str, kind: str, result: Any) -> bool:
     "crontab: Operation not permitted"), or, for a git commit stage, git saying there was
     nothing to commit."""
     out = str(result or "")
-    stage = next((part for part in cmd.split("&&") if _scan_ladder(part) == kind), "")
+    stage = next((part for part in cmd.split("&&") if _stage_kind(part) == kind), "")
     words = [w for w in stage.strip().split() if "=" not in w.split("/")[0] and w not in ("sudo", "env")]
     prog = words[0].rsplit("/", 1)[-1] if words else ""
     if prog and re.search(rf"(^|\n|\")\s*{re.escape(prog)}:\s", out):
@@ -704,7 +780,7 @@ def _semicolon_kind_is_ambiguous(cmd: str, kind: Optional[str]) -> bool:
     parts = cmd.split(";")
     if len(parts) < 2:
         return False
-    part_kinds = [_scan_ladder(part) for part in parts]
+    part_kinds = [_stage_kind(part) for part in parts]
     if len([k for k in part_kinds if k]) < 2:
         return False
     return part_kinds[-1] != kind
@@ -730,7 +806,7 @@ def _double_pipe_kind_is_ambiguous(cmd: str, kind: Optional[str]) -> bool:
     parts = cmd.split("||")
     if len(parts) < 2:
         return False
-    part_kinds = [_scan_ladder(part) for part in parts]
+    part_kinds = [_stage_kind(part) for part in parts]
     distinct = {k for k in part_kinds if k}
     if len(distinct) < 2:
         return False
@@ -764,7 +840,7 @@ def _single_pipe_kind_is_ambiguous(cmd: str, kind: Optional[str]) -> bool:
     parts = cmd.split("|")
     if len(parts) < 2:
         return False
-    first_kind = _scan_ladder(parts[0])
+    first_kind = _stage_kind(parts[0])
     if not first_kind or first_kind != kind:
         return False
     return all(_PIPE_FILTER_CMD.search(p) for p in parts[1:])
