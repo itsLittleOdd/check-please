@@ -2799,5 +2799,84 @@ class CronGuardLine(unittest.TestCase):
         self.assertIn("Tests pass", line)
 
 
+class TargetMatching(unittest.TestCase):
+    """Item 39: a claim naming a target is only BACKED by a call that touched that same
+    target; a genuine mismatch between two real, named targets is NOT_BACKED with a note,
+    never a guess when either side names no target at all."""
+
+    def test_sent_email_match_stays_backed(self):
+        evidence = [ev("send_message", {"to": "dana@example.com"}, seq=1)]
+        v = engine.check_turn("Emailed the invoice to dana@example.com.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+
+    def test_sent_email_mismatch_is_not_backed(self):
+        evidence = [ev("send_message", {"to": "sam@example.com"}, seq=1)]
+        v = engine.check_turn("Emailed the invoice to dana@example.com.", evidence)
+        self.assertEqual(v[0].status, "NOT_BACKED")
+        self.assertIn("sam@example.com", v[0].note)
+        self.assertIn("dana@example.com", v[0].note)
+
+    def test_sent_person_name_mismatch(self):
+        evidence = [ev("send_message", {"to": "sam@example.com"}, seq=1)]
+        v = engine.check_turn("I sent the report to Dana.", evidence)
+        self.assertEqual(v[0].status, "NOT_BACKED")
+        self.assertIn("Dana", v[0].note)
+
+    def test_deployed_environment_mismatch(self):
+        evidence = [ev("terminal", {"command": "netlify deploy --prod"}, seq=1)]
+        v = engine.check_turn("Deployed to staging.", evidence)
+        self.assertEqual(v[0].status, "NOT_BACKED")
+        self.assertIn("prod", v[0].note)
+        self.assertIn("staging", v[0].note)
+
+    def test_deployed_environment_match_stays_backed(self):
+        evidence = [ev("terminal", {"command": "netlify deploy --prod"}, seq=1)]
+        v = engine.check_turn("Deployed to prod.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+
+    def test_pushed_branch_mismatch(self):
+        evidence = [ev("terminal", {"command": "git push origin main"}, seq=1)]
+        v = engine.check_turn("Pushed the fix to staging.", evidence)
+        self.assertEqual(v[0].status, "NOT_BACKED")
+        self.assertIn("main", v[0].note)
+        self.assertIn("staging", v[0].note)
+
+    def test_pushed_branch_match_stays_backed(self):
+        evidence = [ev("terminal", {"command": "git push origin staging"}, seq=1)]
+        v = engine.check_turn("Pushed the fix to staging.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+
+    def test_file_target_mismatch(self):
+        evidence = [ev("write_file", {"path": "reports/notes.md"}, seq=1)]
+        v = engine.check_turn("Saved invoice.md.", evidence)
+        self.assertEqual(v[0].status, "NOT_BACKED")
+        self.assertIn("notes.md", v[0].note)
+        self.assertIn("invoice.md", v[0].note)
+
+    def test_file_target_match_stays_backed(self):
+        evidence = [ev("write_file", {"path": "reports/invoice.md"}, seq=1)]
+        v = engine.check_turn("Saved invoice.md.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+
+    def test_no_target_named_on_either_side_never_guesses(self):
+        evidence = [ev("terminal", {"command": "./deploy.sh"}, seq=1)]
+        v = engine.check_turn("Deployed it.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+
+    def test_claim_target_helper_returns_none_for_untargeted_kinds(self):
+        self.assertIsNone(engine.claim_target("tested", "Tests pass."))
+        self.assertIsNone(engine.claim_target("deleted", "Deleted the old branch."))
+
+    def test_multiple_sends_prefers_the_one_that_matches(self):
+        # An earlier send to the wrong person must not shadow a later send that actually
+        # matches the claimed target.
+        evidence = [
+            ev("send_message", {"to": "sam@example.com"}, seq=1),
+            ev("send_message", {"to": "dana@example.com"}, seq=2),
+        ]
+        v = engine.check_turn("Emailed the invoice to dana@example.com.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+
+
 if __name__ == "__main__":
     unittest.main()

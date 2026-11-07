@@ -830,6 +830,119 @@ def _target_hint(a: dict) -> str:
     return ""
 
 
+# Item 39 (target matching): when a claim names a target (a person, an address, a branch, an
+# environment, a file) and the matching call's own target is also knowable, a mismatch is a
+# real red flag ("sent to sam@..., not Dana"). Only compare when BOTH sides name a target;
+# never guess a target from a vague claim or a call with no identifiable target. Scoped to the
+# five kinds that typically name a target; "tested" and "deleted" never compute one.
+_EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
+_ENV_WORD_RE = re.compile(r"\b(prod|production|staging|stage|dev|development|test|testing)\b", _I)
+# Claim-side environment extraction is scoped to "to <env>"/"on <env>" so a generic sentence
+# like "Staging is live!" (where the environment is the grammatical subject, not necessarily
+# the ONLY place deployed this turn) never reads as a hard target claim; evidence-side keeps
+# the wider whole-command scan since a command line rarely uses the env word for anything else.
+_ENV_TO_RE = re.compile(r"\b(?:to|on)\s+(prod|production|staging|stage|dev|development|test|testing)\b", _I)
+_ENV_ALIASES = {"production": "prod", "stage": "staging", "development": "dev", "testing": "test"}
+_FILE_EXT_RE = re.compile(
+    r"\b[\w-]+\.(?:py|js|ts|jsx|tsx|md|txt|json|ya?ml|csv|html?|css|rb|go|java|cpp|c|sql|sh|env)\b", _I)
+_TO_TOKEN_RE = re.compile(r"\bto\s+([A-Za-z][\w'.-]*)\b")
+# Words after "to" that are never a real person/branch target (sentence glue, not a name).
+_SENT_TO_STOPWORDS = {"the", "it", "this", "that", "them", "everyone", "staging", "prod",
+                       "production", "review", "merge"}
+_PUSH_TO_STOPWORDS = {"the", "it", "this", "that", "them", "review"}
+_GIT_PUSH_BRANCH_RE = re.compile(r"\bgit\s+push\s+(?:[\w.-]+\s+)?([\w][\w./-]*)\b", _I)
+
+
+def _normalize_env(word: str) -> str:
+    w = word.lower()
+    return _ENV_ALIASES.get(w, w)
+
+
+def claim_target(kind: str, text: str) -> Optional[str]:
+    """Extract the target a claim names (lowercased except person names), or None when the
+    sentence names no target for this kind. Never guesses: a kind with no target pattern
+    (e.g. "tested") always returns None."""
+    if not text:
+        return None
+    if kind == "sent":
+        m = _EMAIL_RE.search(text)
+        if m:
+            return m.group(0).lower()
+        m = _TO_TOKEN_RE.search(text)
+        if m and m.group(1).lower() not in _SENT_TO_STOPWORDS:
+            return m.group(1)
+        return None
+    if kind == "deployed":
+        m = _ENV_TO_RE.search(text)
+        return _normalize_env(m.group(1)) if m else None
+    if kind in ("pushed", "committed"):
+        m = _TO_TOKEN_RE.search(text)
+        if m and m.group(1).lower() not in _PUSH_TO_STOPWORDS:
+            return m.group(1).lower()
+        return None
+    if kind in ("saved", "drafted"):
+        m = _FILE_EXT_RE.search(text)
+        return m.group(0).lower() if m else None
+    return None
+
+
+def evidence_target(kind: str, ev: "Evidence") -> Optional[str]:
+    """Extract the target a piece of evidence actually touched, or None when unknowable.
+    Reads only ev.detail/ev.path (already-classified, display-safe text), never raw args."""
+    if ev is None:
+        return None
+    if kind == "sent":
+        m = _EMAIL_RE.search(ev.detail or "")
+        return m.group(0).lower() if m else None
+    if kind == "deployed":
+        m = _ENV_WORD_RE.search(ev.detail or "")
+        return _normalize_env(m.group(1)) if m else None
+    if kind in ("pushed", "committed"):
+        m = _GIT_PUSH_BRANCH_RE.search(ev.detail or "")
+        if m:
+            branch = m.group(1).rstrip(".,!?")
+            if branch.lower() not in _PUSH_TO_STOPWORDS:
+                return branch.lower()
+        return None
+    if kind in ("saved", "drafted"):
+        p = ev.path or ev.detail or ""
+        if not p:
+            return None
+        return p.rsplit("/", 1)[-1].lower()
+    return None
+
+
+def _targets_equivalent(kind: str, a: str, b: str) -> bool:
+    """True when two named targets really are the same thing. A plain name ("Dana") and an
+    email whose local part matches ("dana@example.com") count as equivalent -- a real send
+    tool only ever reports the address, never the person's name back, so without this a
+    correct send would always misread as a mismatch."""
+    a_l, b_l = a.lower(), b.lower()
+    if a_l == b_l:
+        return True
+    if kind == "sent":
+        a_local = a_l.split("@", 1)[0]
+        b_local = b_l.split("@", 1)[0]
+        if a_local and a_local == b_local:
+            return True
+    return False
+
+
+def target_mismatch_note(claim: "Claim", kind: str, ev: Optional["Evidence"]) -> Optional[str]:
+    """None when there's nothing to say; otherwise the exact mismatch note ("sent to
+    sam@..., not Dana"). Only fires when BOTH the claim and the evidence name a target and
+    they genuinely differ (case-insensitive, email-vs-name aware for "sent")."""
+    c_target = claim.target
+    if not c_target or ev is None:
+        return None
+    e_target = evidence_target(kind, ev)
+    if not e_target:
+        return None
+    if _targets_equivalent(kind, c_target, e_target):
+        return None
+    return f"{kind} to {e_target}, not {c_target}"
+
+
 # ------------------------------------------------------------------ claims ----
 
 @dataclass
@@ -838,6 +951,8 @@ class Claim:
     text: str          # the sentence (trimmed)
     phrase: str        # the matched words
     past_scoped: bool = False  # item 42 bug (b): describes an EARLIER run, not the latest one
+    target: Optional[str] = None  # item 39: the person/address/branch/environment/file the
+                                   # claim names, or None when the sentence names no target.
 
 
 # (rung, pattern). Past tense / completed state only.
@@ -1244,7 +1359,7 @@ def extract_claims(reply: str) -> list[Claim]:
             seen_kind_reply.add(kind)
             seen_text.add(text_key)
             past_scoped = kind == "tested" and bool(_PAST_SCOPE_TESTED.search(sent))
-            claims.append(Claim(kind, sent[:200], m.group(0), past_scoped))
+            claims.append(Claim(kind, sent[:200], m.group(0), past_scoped, claim_target(kind, sent)))
             break  # one claim per sentence: the highest-stakes rung listed first
     return claims
 
@@ -1357,7 +1472,23 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
                     verdicts.append(Verdict(claim, "EDITED", pass_ev, rung,
                                             f"{claim.kind} passed only after {proof_name} was edited"))
             else:
-                verdicts.append(Verdict(claim, "BACKED", good[-1], rung))
+                # Item 39 (target matching): when the claim names a target, prefer whichever
+                # successful call actually touched that target; only call it a mismatch when
+                # NONE of this turn's good calls for this kind match the claimed target (never
+                # guess when either side names no target at all).
+                matched = None
+                if claim.target:
+                    for ev in reversed(good):
+                        e_target = evidence_target(claim.kind, ev)
+                        if e_target and _targets_equivalent(claim.kind, claim.target, e_target):
+                            matched = ev
+                            break
+                proof = matched or good[-1]
+                mismatch = None if matched else target_mismatch_note(claim, claim.kind, proof)
+                if mismatch:
+                    verdicts.append(Verdict(claim, "NOT_BACKED", proof, rung, mismatch))
+                else:
+                    verdicts.append(Verdict(claim, "BACKED", proof, rung))
         elif backers:
             reason = backers[-1].reason or _GENERIC_FAILURE_REASON
             note = reason if reason == _GENERIC_FAILURE_REASON else f"{claim.kind} call {reason}"
