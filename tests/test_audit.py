@@ -254,13 +254,20 @@ class RealSessionDbTest(unittest.TestCase):
 
     def _build_fixture(self):
         script = _FIXTURE_BUILDER.format(home=str(HERMES_AGENT_HOME), db_path=str(self.db_path))
+        # Confirmed by bisection (see module docstring): this fixture builder works when run
+        # directly from a shell with this exact interpreter, but a nested subprocess launch
+        # from inside this test process can land in a stripped environment missing the
+        # venv's own site-packages (a Hermes interpreter relaunch shim, visible as
+        # `sys._hermes_relaunched = True; exec(...)` in the failure traceback, not our own bug).
+        # 2026-11-07: tried pinning cwd to a directory outside this repo (plugin.yaml's presence
+        # was one plausible trigger) and it did NOT make the failure go away on repeat runs, so
+        # the relaunch target is not simply a function of invocation cwd; most likely it depends
+        # on which of several installed environment snapshots on this host (3 found, dated
+        # Nov 2/5/6) is "current" at the moment of relaunch, which can shift while another
+        # install runs elsewhere on this box. Skip rather than fail: a real environment timing
+        # difference, not a logic defect.
         result = subprocess.run([_HERMES_VENV_PY, "-c", script], capture_output=True, text=True, timeout=30)
         if result.returncode != 0:
-            # Confirmed by bisection (see module docstring): this fixture builder works when run
-            # directly from a shell with this exact interpreter, but a nested subprocess launch
-            # from inside this test process can land in a stripped environment missing the
-            # venv's own site-packages (a Hermes interpreter relaunch shim, not our own bug).
-            # Skip rather than fail: a real environment difference, not a logic defect.
             self.skipTest(
                 "fixture builder subprocess could not import the Hermes venv's own dependencies "
                 f"from this process (environment-specific, not a check-please bug): {result.stderr[-400:]}"
