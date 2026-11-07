@@ -208,6 +208,58 @@ await checkAsync('an unrecognized verdict status (e.g. FAILED) falls back to NOT
   assert.match(textOf(tree), /NOT BACKED/)
 })
 
+await checkAsync('two same-run STALE rows merge into one row with a count (item 29b)', async () => {
+  sdk.host.state.focusedSessionId = 'sess-7'
+  const payload = {
+    claims: [
+      { kind: 'tested', text: 'ran the tests, all green', status: 'BACKED', proof: 'python3 -m unittest -q' },
+      { kind: 'tested', text: 'tests pass (first mention)', status: 'STALE', proof: 'unittest -q (3 turns ago)' },
+      { kind: 'tested', text: 'suite is green (second mention, same run)', status: 'STALE', proof: 'unittest -q (3 turns ago)' },
+      { kind: 'deployed', text: 'staging deploy', status: 'STALE', proof: null }
+    ],
+    backed: 1,
+    total: 4
+  }
+  const ctx = { rest: async () => payload }
+  const registered = register_(ctx)
+  const pane = registered.find((r) => r.id === 'pane')
+  render(pane.render())
+  await settle()
+  const tree = render(pane.render())
+  const rows = collect(tree, 'div').filter((d) => (d.props.className || '').includes('justify-between'))
+  // 4 claims in, 3 rows out: the two matching-proof STALE claims merged into one.
+  assert.equal(rows.length, 3, `expected 3 rows after dedupe, got ${rows.length}`)
+  const merged = rows.find((r) => textOf(collect(r, 'span')[0]).includes('first mention'))
+  assert.ok(merged, 'merged row not found')
+  assert.match(textOf(collect(merged, 'span')[1]), /STALE \u00d72/)
+  // The no-proof STALE claim never merges with anything (nothing to confirm a shared run).
+  const unmergedStale = rows.find((r) => textOf(collect(r, 'span')[0]).includes('staging deploy'))
+  assert.ok(unmergedStale, 'unmerged no-proof STALE row not found')
+  assert.equal(textOf(collect(unmergedStale, 'span')[1]), 'STALE')
+  // The header tally still counts every individual claim, not deduped rows.
+  assert.match(textOf(tree), /1 backed · 3 stale/)
+})
+
+await checkAsync('STALE rows with different proof strings never merge (item 29b)', async () => {
+  sdk.host.state.focusedSessionId = 'sess-8'
+  const payload = {
+    claims: [
+      { kind: 'tested', text: 'tests pass (run A)', status: 'STALE', proof: 'unittest run A' },
+      { kind: 'tested', text: 'tests pass (run B)', status: 'STALE', proof: 'unittest run B' }
+    ],
+    backed: 0,
+    total: 2
+  }
+  const ctx = { rest: async () => payload }
+  const registered = register_(ctx)
+  const pane = registered.find((r) => r.id === 'pane')
+  render(pane.render())
+  await settle()
+  const tree = render(pane.render())
+  const rows = collect(tree, 'div').filter((d) => (d.props.className || '').includes('justify-between'))
+  assert.equal(rows.length, 2, `expected 2 distinct rows, got ${rows.length}`)
+})
+
 // useClaims' setInterval(load, POLL_MS) is never cleared here (no real unmount happens in this
 // harness), so the event loop would otherwise stay alive forever; exit explicitly instead of
 // letting that look like a hang.

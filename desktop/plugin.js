@@ -60,6 +60,30 @@ function sortedByRank(claims) {
   return claims.slice().sort((a, b) => rowRank(a.status) - rowRank(b.status))
 }
 
+// Item 29(b): two STALE rows backed by the same stale run (same claim.proof, the backend's
+// own evidence-detail string) are one row with a count, not a duplicate line each. Scoped to
+// STALE only, per the backlog's own wording ("two STALE rows for the same test run"), and only
+// when both sides actually name a proof string — two STALE claims with no proof info at all
+// are never merged, since there is nothing to confirm they share the same run.
+function dedupeSameRunStale(claims) {
+  const merged = []
+  const indexByKey = new Map()
+  for (const c of claims) {
+    if (c.status === 'STALE' && c.proof) {
+      const key = `STALE|${c.proof}`
+      if (indexByKey.has(key)) {
+        merged[indexByKey.get(key)].count += 1
+        continue
+      }
+      indexByKey.set(key, merged.length)
+      merged.push({ ...c, count: 1 })
+      continue
+    }
+    merged.push({ ...c, count: 1 })
+  }
+  return merged
+}
+
 // Item 29(c): a header tally like a receipt total ("2 backed · 2 stale · 1 not backed"),
 // good-first per the backlog's own example order; any other status (EDITED, PARTIAL) is
 // appended after, lowest status label text, never color alone (same item-12 rule as rows).
@@ -81,6 +105,9 @@ function ClaimRow({ claim }) {
   // claim.status matches engine.claims_payload()'s key exactly (BACKED | STALE | NOT_BACKED |
   // FAILED); FAILED falls through to the NOT_BACKED style via verdictStyle's default.
   const style = verdictStyle(claim.status)
+  // Item 29(b): a deduped same-run STALE row carries claim.count > 1; show it next to the
+  // label (text, never color alone, same item-12 rule the base label already follows).
+  const label = claim.count > 1 ? `${style.label} \u00d7${claim.count}` : style.label
   return jsxs('div', {
     className: 'flex items-center justify-between gap-2 border-b border-(--ui-border) px-2 py-1.5 text-sm',
     children: [
@@ -92,7 +119,7 @@ function ClaimRow({ claim }) {
         style: { color: style.color },
         className: 'shrink-0 text-xs font-medium',
         // Label text is the signal, not just color (item 12: color is never the only cue).
-        children: style.label
+        children: label
       })
     ]
   })
@@ -118,8 +145,9 @@ function CheckPane({ ctx }) {
                 children: tallyText(claims)
               }),
               // Item 29(d): worst verdict first, so the thing that needs attention is on top.
+              // Item 29(b): dedupe same-run STALE rows into one row with a count before sorting.
               jsx('div', {
-                children: sortedByRank(claims).map((c, i) => jsx(ClaimRow, { key: `${c.kind}-${c.text}-${i}`, claim: c }))
+                children: sortedByRank(dedupeSameRunStale(claims)).map((c, i) => jsx(ClaimRow, { key: `${c.kind}-${c.text}-${i}`, claim: c }))
               })
             ]
           })
