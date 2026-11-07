@@ -78,6 +78,14 @@ hermes plugins install check-please
 
 `cron_guard`: on by default. On an unattended cron run, puts the worst inline-worthy claim (stale, failed, proof edited, or not-backed when `inline_unbacked` is also on) at the TOP of the delivered reply, one line, so a human skimming a cron digest sees it before anything else. The normal Check line still runs too, at the bottom, as usual. Never alters a reply that is exactly empty or the literal `[SILENT]` suppression token many cron jobs use to stay silent-on-green. Detected through `ctx.current_cron_execution()`; outside a cron run this setting does nothing.
 
+## Audit: `hermes check-please audit`
+
+A CLI command, not a chat command: `hermes check-please audit [--since Nd] [--profile NAME] [--limit N]`.
+
+Read-only, local only, nothing sent. It replays your own saved session history (the current profile's own session store) through the same claim-check engine every live turn already uses, and prints a summary: how many turns made a completion claim, how many were backed, and the newest not-backed claims with session id and date. It opens your session database through Hermes' documented `hermes_state.SessionDB(..., read_only=True)`; it never writes to it, never sends anything, and never leaves this machine.
+
+`--since 7d` limits the replay to sessions active in the last 7 days (any number of days). `--limit N` caps how many not-backed claims print (default 20). `--profile NAME` for a profile other than the one you are running in is accepted but not yet implemented; the command tells you so and audits the current profile instead.
+
 ## Catch before send
 
 Two settings work together to stop a stale or failed claim before it reaches you, instead of only reporting it after the fact.
