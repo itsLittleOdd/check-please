@@ -101,7 +101,17 @@ function tallyText(claims) {
   return parts.join(' \u00b7 ')
 }
 
-function ClaimRow({ claim }) {
+// Item 29(e): the row's own expand detail text. We only have what the backend's
+// verdict_to_dict() already sends (claim.proof, claim.note) — no relative-time field exists
+// in that payload today, so this reports the proof string or the flagged reason honestly
+// rather than inventing a timestamp the backend doesn't send.
+function rowDetailText(claim) {
+  if (claim.proof) return `Proof: ${claim.proof}`
+  if (claim.note) return `Why flagged: ${claim.note}`
+  return 'No proof recorded.'
+}
+
+function ClaimRow({ claim, expanded, onToggle }) {
   // claim.status matches engine.claims_payload()'s key exactly (BACKED | STALE | NOT_BACKED |
   // FAILED); FAILED falls through to the NOT_BACKED style via verdictStyle's default.
   const style = verdictStyle(claim.status)
@@ -109,24 +119,61 @@ function ClaimRow({ claim }) {
   // label (text, never color alone, same item-12 rule the base label already follows).
   const label = claim.count > 1 ? `${style.label} \u00d7${claim.count}` : style.label
   return jsxs('div', {
-    className: 'flex items-center justify-between gap-2 border-b border-(--ui-border) px-2 py-1.5 text-sm',
+    className: 'border-b border-(--ui-border) px-2 py-1.5 text-sm',
     children: [
-      // min-w-0 is required alongside truncate in a flex row: without it flex items default to
-      // min-width:auto and the ellipsis never kicks in, so long claim text overflows the 280px
-      // pane at narrow widths instead of truncating (item 12 finding, fixed here).
-      jsx('span', { className: 'min-w-0 flex-1 truncate', children: claim.text }),
-      jsx('span', {
-        style: { color: style.color },
-        className: 'shrink-0 text-xs font-medium',
-        // Label text is the signal, not just color (item 12: color is never the only cue).
-        children: label
-      })
+      // Item 29(e): click or Enter/Space expands the row. role+tabIndex make it keyboard
+      // reachable (item 12's keyboard-focus rule); aria-expanded is the accessible state,
+      // never color or layout alone.
+      jsxs('div', {
+        role: 'button',
+        tabIndex: 0,
+        'aria-expanded': expanded,
+        className: 'flex items-center justify-between gap-2 cursor-pointer',
+        onClick: onToggle,
+        onKeyDown: (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            if (typeof e.preventDefault === 'function') e.preventDefault()
+            onToggle()
+          }
+        },
+        children: [
+          // min-w-0 is required alongside truncate in a flex row: without it flex items default
+          // to min-width:auto and the ellipsis never kicks in, so long claim text overflows the
+          // 280px pane at narrow widths instead of truncating (item 12 finding, fixed here).
+          jsx('span', { className: 'min-w-0 flex-1 truncate', children: claim.text }),
+          jsx('span', {
+            style: { color: style.color },
+            className: 'shrink-0 text-xs font-medium',
+            // Label text is the signal, not just color (item 12: color is never the only cue).
+            children: label
+          })
+        ]
+      }),
+      expanded
+        ? jsx('div', {
+            className: 'px-0 pt-1 text-xs text-(--ui-text-tertiary)',
+            children: rowDetailText(claim)
+          })
+        : null
     ]
   })
 }
 
 function CheckPane({ ctx }) {
   const { claims } = useClaims(ctx)
+  // Item 29(e): expand state lives HERE, one level up from the rows, not inside ClaimRow
+  // itself. The harness's hook cell is keyed by component function identity, not by element
+  // instance, so every ClaimRow render in the same pass would otherwise share one state slot;
+  // lifting the state avoids that trap and is also just the correct React pattern for a list.
+  const [expandedKeys, setExpandedKeys] = useState(() => new Set())
+  const toggleKey = (key) => {
+    setExpandedKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   return jsxs('div', {
     className: 'flex h-full flex-col overflow-y-auto p-2 text-sm',
@@ -147,7 +194,15 @@ function CheckPane({ ctx }) {
               // Item 29(d): worst verdict first, so the thing that needs attention is on top.
               // Item 29(b): dedupe same-run STALE rows into one row with a count before sorting.
               jsx('div', {
-                children: sortedByRank(dedupeSameRunStale(claims)).map((c, i) => jsx(ClaimRow, { key: `${c.kind}-${c.text}-${i}`, claim: c }))
+                children: sortedByRank(dedupeSameRunStale(claims)).map((c, i) => {
+                  const key = `${c.kind}-${c.text}-${i}`
+                  return jsx(ClaimRow, {
+                    key,
+                    claim: c,
+                    expanded: expandedKeys.has(key),
+                    onToggle: () => toggleKey(key)
+                  })
+                })
               })
             ]
           })

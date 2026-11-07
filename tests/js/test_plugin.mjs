@@ -260,6 +260,92 @@ await checkAsync('STALE rows with different proof strings never merge (item 29b)
   assert.equal(rows.length, 2, `expected 2 distinct rows, got ${rows.length}`)
 })
 
+await checkAsync('clicking a row expands it to show the proof string (item 29e)', async () => {
+  sdk.host.state.focusedSessionId = 'sess-9'
+  const payload = {
+    claims: [
+      { kind: 'tested', text: 'tests pass (two turns ago)', status: 'STALE', proof: 'python3 -m unittest -q (3 turns ago)', note: 'no run since the edit' }
+    ],
+    backed: 0,
+    total: 1
+  }
+  const ctx = { rest: async () => payload }
+  const registered = register_(ctx)
+  const pane = registered.find((r) => r.id === 'pane')
+  render(pane.render())
+  await settle()
+  let tree = render(pane.render())
+  // Collapsed by default: the proof text is not in the tree yet.
+  assert.ok(!textOf(tree).includes('python3 -m unittest -q'), 'expand detail should not show before any click')
+  const rowButtons = collect(tree, 'div').filter((d) => d.props.role === 'button')
+  assert.equal(rowButtons.length, 1)
+  assert.equal(rowButtons[0].props['aria-expanded'], false)
+  rowButtons[0].props.onClick()
+  tree = render(pane.render())
+  assert.match(textOf(tree), /Proof: python3 -m unittest -q \(3 turns ago\)/)
+  const reopenedButtons = collect(tree, 'div').filter((d) => d.props.role === 'button')
+  assert.equal(reopenedButtons[0].props['aria-expanded'], true)
+  // Clicking again collapses it.
+  reopenedButtons[0].props.onClick()
+  tree = render(pane.render())
+  assert.ok(!textOf(tree).includes('Proof: python3'), 'second click should collapse the row')
+})
+
+await checkAsync('Enter on a row expands it to show the flagged reason when there is no proof (item 29e)', async () => {
+  sdk.host.state.focusedSessionId = 'sess-10'
+  const payload = {
+    claims: [
+      { kind: 'sent', text: 'invoice emailed to Dana', status: 'NOT_BACKED', proof: null, note: 'no send call ran' }
+    ],
+    backed: 0,
+    total: 1
+  }
+  const ctx = { rest: async () => payload }
+  const registered = register_(ctx)
+  const pane = registered.find((r) => r.id === 'pane')
+  render(pane.render())
+  await settle()
+  let tree = render(pane.render())
+  const rowButtons = collect(tree, 'div').filter((d) => d.props.role === 'button')
+  assert.equal(rowButtons.length, 1)
+  rowButtons[0].props.onKeyDown({ key: 'Enter', preventDefault: () => {} })
+  tree = render(pane.render())
+  assert.match(textOf(tree), /Why flagged: no send call ran/)
+  // A keypress other than Enter/Space must not toggle anything.
+  const reopenedButtons = collect(tree, 'div').filter((d) => d.props.role === 'button')
+  reopenedButtons[0].props.onKeyDown({ key: 'a', preventDefault: () => {} })
+  tree = render(pane.render())
+  assert.match(textOf(tree), /Why flagged: no send call ran/, 'an unrelated key must not collapse the row')
+})
+
+await checkAsync('two rows expand independently, proving state is not shared across rows (item 29e)', async () => {
+  sdk.host.state.focusedSessionId = 'sess-11'
+  const payload = {
+    claims: [
+      { kind: 'tested', text: 'row one', status: 'STALE', proof: 'proof one' },
+      { kind: 'sent', text: 'row two', status: 'NOT_BACKED', proof: 'proof two' }
+    ],
+    backed: 0,
+    total: 2
+  }
+  const ctx = { rest: async () => payload }
+  const registered = register_(ctx)
+  const pane = registered.find((r) => r.id === 'pane')
+  render(pane.render())
+  await settle()
+  let tree = render(pane.render())
+  let rowButtons = collect(tree, 'div').filter((d) => d.props.role === 'button')
+  assert.equal(rowButtons.length, 2)
+  // sortedByRank (item 29d) may reorder rows by status, so find "row one" by its own text
+  // rather than assuming array position.
+  const rowOneButton = rowButtons.find((b) => textOf(b).includes('row one'))
+  assert.ok(rowOneButton, 'row one button not found')
+  rowOneButton.props.onClick()
+  tree = render(pane.render())
+  assert.match(textOf(tree), /Proof: proof one/)
+  assert.ok(!textOf(tree).includes('Proof: proof two'), 'row two must stay collapsed when only row one was clicked')
+})
+
 // useClaims' setInterval(load, POLL_MS) is never cleared here (no real unmount happens in this
 // harness), so the event loop would otherwise stay alive forever; exit explicitly instead of
 // letting that look like a hang.
