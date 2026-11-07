@@ -561,6 +561,63 @@ class FailureResultDetection(unittest.TestCase):
         self.assertFalse(result.ok)
 
 
+class WeakFailureMarkerOverride(unittest.TestCase):
+    """Item 58: a WEAK text marker (bare "no such file"/"error:"/"permission denied") must
+    not override an explicit zero exit code plus an explicit pass summary in the same
+    output; a STRONG marker (traceback, command not found, a nonzero exit code mention, a
+    failure count above zero, 0 passed, bare FAILED, HTTP 4xx/5xx) must always still fail
+    the call regardless of any pass summary. Invented example shapes only."""
+
+    _CLEAN_PASS_WITH_WEAK_MARKER = (
+        "..... \ncleaner: no such file: /tmp/work/nope.csv\n...\n"
+        "----------------------------------------------------------------------\n"
+        "Ran 8 tests in 0.014s\n\nOK\nRESULT: PASS (coverage 95.1% >= 90.0%)\nci: passed"
+    )
+
+    def test_weak_marker_ignored_when_exit_zero_and_unittest_ok_summary_present(self):
+        self.assertTrue(engine.call_succeeded(
+            {"exit_code": 0, "output": self._CLEAN_PASS_WITH_WEAK_MARKER}))
+
+    def test_weak_marker_still_fails_when_exit_code_is_nonzero(self):
+        self.assertFalse(engine.call_succeeded(
+            {"exit_code": 1, "output": self._CLEAN_PASS_WITH_WEAK_MARKER}))
+
+    def test_strong_marker_fails_even_with_exit_zero_and_a_pass_summary(self):
+        output_with_strong_marker = self._CLEAN_PASS_WITH_WEAK_MARKER.replace(
+            "OK\nRESULT: PASS", "FAILED (failures=1)\nRESULT: PASS")
+        self.assertFalse(engine.call_succeeded(
+            {"exit_code": 0, "output": output_with_strong_marker}))
+
+    def test_weak_marker_still_fails_with_no_exit_code_field_at_all(self):
+        # Item 38's own counter-case: a missing exit code never qualifies as "explicit
+        # zero", so a weak marker is never neutralized without one.
+        self.assertFalse(engine.call_succeeded({"output": "cleanup: no such file: /tmp/x"}))
+
+    def test_weak_marker_still_fails_with_exit_zero_but_no_pass_summary(self):
+        self.assertFalse(engine.call_succeeded(
+            {"exit_code": 0, "output": "deploy.sh: No such file or directory"}))
+
+    def test_weak_marker_neutralized_by_pytest_passed_summary_with_no_failed_word(self):
+        self.assertTrue(engine.call_succeeded(
+            {"exit_code": 0, "output": "permission denied: skipped a locked temp file\n12 passed in 0.9s"}))
+
+    def test_pytest_summary_does_not_neutralize_when_failed_word_also_present(self):
+        self.assertFalse(engine.call_succeeded(
+            {"exit_code": 0, "output": "permission denied: skipped a locked temp file\n"
+                                        "11 passed, 1 failed in 0.9s"}))
+
+    def test_weak_marker_neutralized_by_echoed_exit_zero_status_line(self):
+        self.assertTrue(engine.call_succeeded(
+            {"exit_code": 0, "output": "error: cache miss, falling back\nEXIT: 0"}))
+
+    def test_echoed_nonzero_exit_status_line_is_a_strong_marker(self):
+        self.assertFalse(engine.call_succeeded(
+            {"exit_code": 0, "output": "Ran 3 tests\n\nOK\nEXIT: 1"}))
+
+    def test_clean_run_with_no_markers_at_all_is_unaffected(self):
+        self.assertTrue(engine.call_succeeded({"exit_code": 0, "output": "Ran 3 tests\n\nOK"}))
+
+
 class FailureReason(unittest.TestCase):
     """Item 38 slice 2: the FAILED verdict's note should say a few specific words (\"deploy
     script exited 1\") instead of the one generic sentence every failure used to get.

@@ -498,8 +498,16 @@ def call_succeeded(result: Any, status: Optional[str] = None) -> bool:
     # Checked before everything else so these markers are never shadowed by a dict branch
     # that would otherwise return True early on a zero/missing exit_code.
     text_blob = _result_text_blob(data) if data else str(result or "")
-    if _has_failure_marker(text_blob):
+    if _has_strong_failure_marker(text_blob):
         return False
+    # Item 58: a WEAK marker (a bare "no such file"/"error:"/"permission denied" string
+    # that can show up inside a test's own output when it exercises its own error path,
+    # e.g. a cleanup step logging "no such file" for a file it is deliberately removing)
+    # only overrides an explicit zero exit code plus an explicit pass summary when none of
+    # the three hold; otherwise the call is still read as failed, same as before this item.
+    if _has_weak_failure_marker(text_blob):
+        if not (_explicit_zero_exit_code(data) and _has_explicit_pass_summary(text_blob)):
+            return False
     if data:
         if data.get("success") is False or data.get("ok") is False:
             return False
@@ -537,6 +545,26 @@ _BARE_FAILED_MARKER = re.compile(r"(?<![A-Za-z0-9])FAILED(?![A-Za-z0-9])")
 _RESULT_FAILURE_TEXT = re.compile(
     r"\btraceback\b|\berror:|\bpermission denied\b|\bcommand not found\b|\bexit code [1-9]|\bno such file\b", _I)
 _HTTP_ERROR_STATUS = re.compile(r"\bhttp/\d(?:\.\d)?\"?\s+([45]\d{2})\b", _I)
+
+# Item 58: split item 38's combined text markers into STRONG (never overridden by an exit
+# code or a pass summary) and WEAK (a bare "no such file"/"error:"/"permission denied"
+# string that can show up inside a passing run's own output, e.g. a cleanup step logging
+# "no such file" for a path it is deliberately removing, or a self-test of an error path).
+# A standalone "exit:" status line echoing a nonzero code is strong, same family as the
+# existing "exit code [1-9]" text marker.
+_STRONG_FAILURE_TEXT = re.compile(r"\btraceback\b|\bcommand not found\b|\bexit code [1-9]|\bexit:\s*[1-9]", _I)
+_WEAK_FAILURE_TEXT = re.compile(r"\berror:|\bpermission denied\b|\bno such file\b", _I)
+
+# Item 58: the three explicit pass-summary shapes that can neutralize a WEAK marker.
+# unittest: "Ran N test(s)" followed later by a line that is exactly "OK" or starts "OK (".
+# pytest: "N passed" with no "failed" anywhere in the same text. A status line naming
+# RESULT/CI/STATUS as PASS/passed/OK. An echoed "EXIT: 0" status line.
+_UNITTEST_RAN = re.compile(r"\bran\s+\d+\s+tests?\b", _I)
+_UNITTEST_OK_LINE = re.compile(r"^[ \t]*OK(?:[ \t]*\(.*)?[ \t]*$", re.MULTILINE)
+_PYTEST_PASSED = re.compile(r"\b\d+\s+passed\b", _I)
+_PYTEST_FAILED_WORD = re.compile(r"\bfailed\b", _I)
+_STATUS_PASS_LINE = re.compile(r"\b(?:result|ci|status)\s*:\s*(?:pass|passed|ok)\b", _I)
+_ECHOED_EXIT_ZERO = re.compile(r"\bexit:\s*0\b", _I)
 
 # Item 43 root-cause fix (2), 17:10 diagnosis: a failed terminal/code call whose own result
 # text says the environment itself was broken (no interpreter on PATH, a missing Python
@@ -595,6 +623,65 @@ def _has_failure_marker(text: str) -> bool:
         or _BARE_FAILED_MARKER.search(text)
         or _HTTP_ERROR_STATUS.search(text)
     )
+
+
+def _has_strong_failure_marker(text: str) -> bool:
+    """Item 58: markers that always fail the call, regardless of exit code or any pass
+    summary in the same text."""
+    if not text:
+        return False
+    return bool(
+        _STRONG_FAILURE_TEXT.search(text)
+        or _FAILURE_COUNT.search(text)
+        or _FAILURE_EQ.search(text)
+        or _ZERO_PASSED.search(text)
+        or _BARE_FAILED_MARKER.search(text)
+        or _HTTP_ERROR_STATUS.search(text)
+    )
+
+
+def _has_weak_failure_marker(text: str) -> bool:
+    """Item 58: a marker that is ignored only when the result also carries an explicit
+    zero exit code and an explicit pass summary (see _explicit_zero_exit_code and
+    _has_explicit_pass_summary); otherwise the call still reads as failed."""
+    if not text:
+        return False
+    return bool(_WEAK_FAILURE_TEXT.search(text))
+
+
+def _explicit_zero_exit_code(data: dict) -> bool:
+    """Item 58: True only when the result carries its own exit_code/returncode/exitCode
+    field and it is exactly 0. A missing exit code never qualifies (item 38's counter-case:
+    no exit code is still trusted on its own, but it never neutralizes a WEAK marker)."""
+    if not data:
+        return False
+    code = data.get("exit_code", data.get("returncode", data.get("exitCode")))
+    if code is None:
+        return False
+    try:
+        return int(code) == 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _has_explicit_pass_summary(text: str) -> bool:
+    """Item 58: one of the three explicit pass-summary shapes that can neutralize a WEAK
+    marker. unittest's "Ran N test(s)" must be followed later in the text by a line that is
+    exactly "OK" or starts "OK (". pytest's "N passed" counts only when "failed" never
+    appears anywhere in the same text. A RESULT:/CI:/STATUS: PASS/passed/OK status line, or
+    an echoed "EXIT: 0" status line, also count."""
+    if not text:
+        return False
+    ran_match = _UNITTEST_RAN.search(text)
+    if ran_match and _UNITTEST_OK_LINE.search(text, ran_match.end()):
+        return True
+    if _PYTEST_PASSED.search(text) and not _PYTEST_FAILED_WORD.search(text):
+        return True
+    if _STATUS_PASS_LINE.search(text):
+        return True
+    if _ECHOED_EXIT_ZERO.search(text):
+        return True
+    return False
 
 
 _GENERIC_FAILURE_REASON = "the call ran but did not succeed"
