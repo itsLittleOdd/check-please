@@ -568,6 +568,63 @@ def handle_check(raw_args: str = "", session_id: Any = None, **kwargs: Any) -> s
         return f"Check, Please could not build the report: {exc}"
 
 
+def _audit_cli_setup(parser: Any) -> None:
+    """Wire ``hermes check-please audit`` (backlog item 28). One subcommand today; more could
+    join the same ``check-please`` namespace later without a new register_cli_command call."""
+    subs = parser.add_subparsers(dest="check_please_command", required=False)
+    p_audit = subs.add_parser("audit", help="Read-only replay of your own saved sessions through "
+                                             "the engine: turns checked, claims, backed, top "
+                                             "not-backed claims with session id and date.")
+    p_audit.add_argument("--since", default=None,
+                          help="Only sessions active in the last N days, e.g. 7d (default: no limit)")
+    p_audit.add_argument("--profile", default=None,
+                          help="Named profile to audit (default: the current profile's own home; "
+                               "cross-profile audit is not yet built, see README)")
+    p_audit.add_argument("--limit", type=int, default=20,
+                          help="Max not-backed claims to print (default: 20)")
+    parser.set_defaults(func=_audit_cli_dispatch)
+
+
+def _audit_cli_dispatch(args: Any) -> int:
+    import sys
+    sub = getattr(args, "check_please_command", None)
+    if sub != "audit":
+        print("usage: hermes check-please audit [--since Nd] [--profile NAME] [--limit N]",
+              file=sys.stderr)
+        return 2
+    return _audit_cli_run(args)
+
+
+def _audit_cli_run(args: Any) -> int:
+    """Handler for ``hermes check-please audit``. Read-only, local only, nothing sent. Resolves
+    the current profile's own ``state.db`` via the documented ``hermes_constants.get_hermes_home``;
+    ``--profile`` for a NAMED profile other than the current one is accepted on the command line
+    but not yet implemented (reported plainly, not silently ignored) -- a follow-up slice."""
+    import sys
+    try:
+        from . import audit as _audit
+        import hermes_constants
+    except Exception as exc:
+        print(f"Check, Please audit needs a real Hermes install: {exc}", file=sys.stderr)
+        return 1
+    since_days = None
+    if args.since:
+        raw = str(args.since).strip().lower()
+        digits = raw[:-1] if raw.endswith("d") else raw
+        try:
+            since_days = int(digits)
+        except ValueError:
+            print(f"--since expects a number of days like 7d, got {args.since!r}", file=sys.stderr)
+            return 2
+    if args.profile:
+        print(f"--profile {args.profile!r} is not yet supported; auditing the current profile's "
+              "own session history instead (see README's 'check-please audit' limits).",
+              file=sys.stderr)
+    db_path = hermes_constants.get_hermes_home() / "state.db"
+    print(_audit.run_audit(db_path, since_days=since_days, limit=max(args.limit, 0)))
+    return 0
+
+
 def register(ctx) -> None:
     _ctx_box["ctx"] = ctx
     try:
@@ -603,3 +660,7 @@ def register(ctx) -> None:
                           description="Show which claims the tool log backs: last reply, "
                                        "'today' for the day's tally, 'jobs' for per-cron-job "
                                        "tally, 'subagents' for delegated children's own claims")
+    ctx.register_cli_command(
+        "check-please", help="Read-only audit of your own saved session history (backlog item 28)",
+        setup_fn=_audit_cli_setup, handler_fn=_audit_cli_dispatch,
+        description="hermes check-please audit [--since Nd] [--profile NAME] [--limit N]")

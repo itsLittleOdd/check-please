@@ -1576,6 +1576,52 @@ def jobs_report(tally: dict, char_limit: int = 1500) -> str:
     return _truncate_for_phone("\n".join(lines), char_limit)
 
 
+def audit_report(rows: list[dict], limit: int = 20, char_limit: int = 100_000) -> str:
+    """Backlog item 28: summarize a read-only replay of the user's own saved sessions.
+    *rows* is a flat list of {"session_id", "date", "verdicts"} built by the caller (one row
+    per checked turn, "verdicts" a list of engine.Verdict from engine.check_turn against that
+    turn's own evidence); this function never opens a database itself. Newest-dated not-backed
+    claims are listed first, capped at *limit*. Pure aggregation, no I/O, no mutation of *rows*."""
+    turns_checked = len(rows)
+    claims = 0
+    backed = 0
+    issues: list[dict] = []
+    for row in rows:
+        for v in row.get("verdicts") or []:
+            claims += 1
+            if v.status == "BACKED":
+                backed += 1
+            else:
+                issues.append({
+                    "session_id": row.get("session_id", ""),
+                    "date": row.get("date", ""),
+                    "status": v.status,
+                    "text": v.claim.text,
+                    "note": v.note,
+                })
+    issues.sort(key=lambda it: it.get("date") or "", reverse=True)
+    if not turns_checked:
+        return "Check, Please audit: no saved turns with completion claims found in range."
+    label = {"STALE": "STALE", "FAILED": "FAILED", "NOT_BACKED": "NOT BACKED", "EDITED": "PROOF EDITED"}
+    lines = [
+        f"Check, Please audit: {turns_checked} turns checked, {claims} claims, "
+        f"{backed} backed, {len(issues)} not backed.",
+    ]
+    if issues:
+        lines.append("Top not-backed claims (newest first):")
+        for item in issues[:limit]:
+            when = item["date"] or "unknown date"
+            quoted = item["text"].replace('"', "'")
+            note_part = f" ({item['note']})" if item["note"] else ""
+            lines.append(
+                f"- [{when}] session {item['session_id']}: {label.get(item['status'], item['status'])} "
+                f'"{quoted}"{note_part}'
+            )
+        if len(issues) > limit:
+            lines.append(f"...(+{len(issues) - limit} more; raise --limit to see them)")
+    return _truncate_for_phone("\n".join(lines), char_limit)
+
+
 def append_subagent_note(line: str, subagent_verdicts: list[Verdict], inline_unbacked: bool = False) -> str:
     """Backlog item 31 part (b): fold inline-worthy verdicts from this turn's subagent_stop
     calls into the parent's own Check line. A parent relaying a child's claim ("the subagent
