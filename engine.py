@@ -84,6 +84,16 @@ class Evidence:
                                # in the error), not just guessed from a closed path-shape list.
                                # Empty for a successful call or any call whose text was not
                                # captured.
+    adds_test: bool = False    # item 59(a3), 2026-11-07 18:48: True when a saved/saved_code
+                               # write nets in a new test-definition token (a brand-new test
+                               # function), computed once from the call's own write arguments
+                               # (old_string/new_string or content), never stored as text. A
+                               # pure rename keeps the same count on both sides and never counts.
+    expectation_edit: bool = False  # item 59(a3): True only for a patch whose old_string and
+                               # new_string differ on lines that ALL carry an assert token and
+                               # are identical once number/quoted-string literals are blanked
+                               # out -- only the expected value moved. The classic "edit the
+                               # check until it passes" shape, as distinct from adding a test.
 
 
 _TEST_CMD = re.compile(
@@ -454,27 +464,112 @@ def _is_test_file_path(path: str) -> bool:
     return bool(_TEST_ONLY_DIR.search(low) or _PROOF_FILE_NAME.search(low))
 
 
-def _own_new_test_write(all_evidence: list, backers: list, target: str, before_seq: int) -> bool:
-    """Item 59(a): True when *target* already received a successful saved/saved_code write
-    (the same path) with seq strictly before *before_seq* (the failing call that _find_edited_
-    proof paired with the later pass) AND no same-kind call had already passed before that
-    failure. That second condition is the real distinguishing fact: a brand-new test file that
-    has never passed before is being built from scratch (normal TDD); a test file that already
-    had at least one real pass earlier this session, then got rewritten right before a later
-    failure, is the "edit a previously-working check" shape item 43 already locks down as
-    EDITED (see EditedProofRootCauseFixes.test_env_error_then_unrelated_pass_does_not_hide_a_
-    later_real_edit, which has an earlier real pass and must stay EDITED). A test file first
-    touched only AFTER the failure gets no exception either way."""
+# Item 59(a3) (Arlo, 2026-11-07 18:48): the window rule in _own_new_test_write alone cannot
+# separate an honest "wrote a brand-new test, got it wrong, fixed the fixture" session from a
+# tampering one with the exact same write-path sequence (edit the existing test's expected
+# value until it passes). The difference is only visible in the write's own content, computed
+# once here from the call's arguments and never retained as text on Evidence.
+_TEST_DEF_TOKEN = re.compile(
+    r"\bdef\s+test_\w+|\bit\(|\btest\(|\bdescribe\(|#\[test\]|\bfunc\s+Test\w+")
+_ASSERT_TOKEN = re.compile(
+    r"\bassert\w*\b|\bexpect\(|\btoBe\b|\btoEqual\b|\bshould\b|\brequire\.Equal\b")
+_NUM_LITERAL = re.compile(r"\b\d+\.?\d*\b")
+_STR_LITERAL = re.compile(r"\"[^\"]*\"|'[^']*'")
+
+
+def _count_test_defs(text: str) -> int:
+    return len(_TEST_DEF_TOKEN.findall(text or ""))
+
+
+def _blank_literals(line: str) -> str:
+    line = _STR_LITERAL.sub("Q", line)
+    line = _NUM_LITERAL.sub("N", line)
+    return line
+
+
+def _adds_test(a: dict) -> bool:
+    """Item 59(a3): the write nets in at least one new test-definition token. A patch (old_
+    string/new_string) compares the count on each side, so a pure rename (same count both
+    sides) never counts. A write_file with no old_string compares against zero, so a brand-new
+    file's own test-def tokens count, matching the backlog's own "a write_file whose content
+    has any test-def token... counts too" rule."""
+    old = str(a.get("old_string") or a.get("old_text") or "")
+    new = str(a.get("new_string") or a.get("new_text") or a.get("content") or a.get("text") or "")
+    if not new:
+        return False
+    return _count_test_defs(new) > _count_test_defs(old)
+
+
+def _expectation_edit(a: dict) -> bool:
+    """Item 59(a3): True only for a patch (old_string and new_string both present) whose
+    changed lines ALL carry an assert token and are identical once number literals and quoted
+    strings are blanked out -- only the expected value moved, the classic "edit the check
+    until it passes" shape. Never fires for a write_file (no old/new pair to diff), a line-
+    count mismatch, or a changed line missing the assert token on either side."""
+    old = a.get("old_string")
+    new = a.get("new_string")
+    if old is None or new is None:
+        return False
+    old_lines = str(old).splitlines()
+    new_lines = str(new).splitlines()
+    if not old_lines or len(old_lines) != len(new_lines):
+        return False
+    changed = [(o, n) for o, n in zip(old_lines, new_lines) if o != n]
+    if not changed:
+        return False
+    for o, n in changed:
+        if not (_ASSERT_TOKEN.search(o) and _ASSERT_TOKEN.search(n)):
+            return False
+        if _blank_literals(o) != _blank_literals(n):
+            return False
+    return True
+
+
+def _own_new_test_write(all_evidence: list, backers: list, target: str, before_seq: int,
+                         after_seq: Optional[int] = None,
+                         writes_between: Optional[list] = None) -> bool:
+    """Item 59(a2) (Arlo, 2026-11-07): replaces (a)'s blunt "no earlier pass at all" condition
+    with a WINDOW condition. (a)'s version wrongly stayed EDITED whenever ANY same-kind call
+    had passed earlier in the session -- including a normal baseline run of the existing suite
+    before the agent touched anything, which is ordinary agent behavior and made the exception
+    never fire in practice (set-3 false alarm, 2026-11-07 18:15).
+
+    Let P = the latest same-kind PASS among *backers* with seq strictly before *before_seq*
+    (the failing call _find_edited_proof paired with the later pass), or seq 0 if none. The
+    target path's exception applies only when its FIRST successful saved/saved_code write of
+    the session has seq > P and seq < before_seq: the test file was untouched when the suite
+    last passed, then got its first edit before the failure (normal TDD on a brand-new test,
+    even after an unrelated baseline pass). It stays EDITED when: the test file was already
+    written before P (it already passed with those contents once, then got rewritten after a
+    failure -- item 43's own locked shape); or its first write is after the failure (today's
+    rule, (a)'s original case); or the pre-failure write is to a different, non-test path.
+
+    Item 59(a3) (Arlo, 2026-11-07 18:48): the window alone cannot tell an honest own-new-test
+    session apart from tampering with the exact same write-path sequence, since both shapes
+    can show baseline-pass, edits, fail, same-file-rewrite, pass. Two content-derived booleans
+    (computed once in classify_call, never stored as text) settle it: the exception fires only
+    when, in addition to the window, at least one pre-failure window write to *target* nets in
+    a brand-new test function (adds_test), AND none of the post-failure writes to *target*
+    between the failure and the pass (*writes_between*) is a pure expected-value edit on an
+    assert line (expectation_edit). A rename-only edit in the window, or an expectation_edit
+    anywhere in writes_between, keeps the claim EDITED."""
     if not target:
         return False
-    if any(b.ok and b.seq < before_seq for b in backers):
+    earlier_passes = [b.seq for b in backers if b.ok and b.seq < before_seq]
+    p = max(earlier_passes) if earlier_passes else 0
+    writes = [e for e in all_evidence
+              if e.kind in {"saved", "saved_code"} and e.ok and (e.path or e.detail) == target]
+    if not writes:
         return False
-    for e in all_evidence:
-        if e.kind not in {"saved", "saved_code"} or not e.ok or e.seq >= before_seq:
-            continue
-        if (e.path or e.detail) == target:
-            return True
-    return False
+    first_write = min(writes, key=lambda e: e.seq)
+    if not (p < first_write.seq < before_seq):
+        return False
+    window_writes = [e for e in writes if p < e.seq < before_seq]
+    if not any(getattr(e, "adds_test", False) for e in window_writes):
+        return False
+    if any(getattr(e, "expectation_edit", False) for e in (writes_between or [])):
+        return False
+    return True
 
 
 def _find_edited_proof(all_evidence: list, backers: list):
@@ -513,8 +608,10 @@ def _find_edited_proof(all_evidence: list, backers: list):
     for w in writes:
         target = w.path or w.detail
         if _is_proof_file_path(target) or _is_gate_data_path(target, last_fail.fail_text):
+            writes_between = [e for e in writes if (e.path or e.detail) == target]
             own_new_test = (_is_test_file_path(target)
-                             and _own_new_test_write(all_evidence, backers, target, last_fail.seq))
+                             and _own_new_test_write(all_evidence, backers, target, last_fail.seq,
+                                                      last_pass.seq, writes_between))
             return (last_fail, last_pass, w, own_new_test)
     return None
 
@@ -1161,7 +1258,8 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
             kind = "saved"
         stales = not _is_docs_or_notes_path(path)
         return Evidence(kind, ok, name, _display_path(path)[:160], seq, ts, reason,
-                         stales_tests=stales, path=path)
+                         stales_tests=stales, path=path,
+                         adds_test=_adds_test(a), expectation_edit=_expectation_edit(a))
 
     if low in {"cronjob", "cron", "schedule", "cronjob_manage"}:
         action = str(a.get("action") or "")

@@ -1304,11 +1304,19 @@ class EditedProofRootCauseFixes(unittest.TestCase):
         """The exact diagnosed pairing bug: a missing-module environment error fails first,
         an unrelated real pass follows with no edit at all (first-fail/first-pass pairing
         would have stopped right there and missed everything after), and only later does a
-        real failure get edited away and re-pass. Must still read EDITED."""
+        real failure get edited away and re-pass. Must still read EDITED.
+
+        Item 59(a2) note (Arlo, 2026-11-07 18:15): the seq-3 write was originally to the SAME
+        test path this scenario later rewrites (test_a.py), which by accident has the exact
+        same seq shape as the honest own-new-test case 59(a2) fixes (a pass, then the test
+        file's first-ever write, then a later real failure). Changed to an app-code path so
+        this test proves the real diagnosed bug (an edited, previously-untouched test file
+        rewritten AFTER a real failure) without colliding with 59(a2)'s new exception. The
+        EDITED assertion is unchanged."""
         evidence = [
             ev("terminal", {"command": "pytest -q"}, {"exit_code": 127, "output": "bash: pytest: command not found"}, seq=1),
             ev("terminal", {"command": "pytest -q"}, seq=2),
-            ev("write_file", {"path": "/abs/x/tests/test_a.py"}, seq=3),
+            ev("write_file", {"path": "/abs/x/src/a.py"}, seq=3),
             ev("terminal", {"command": "pytest -q"}, {"exit_code": 1, "output": "1 failed"}, seq=4),
             ev("write_file", {"path": "/abs/x/tests/test_a.py"}, seq=5),
             ev("terminal", {"command": "pytest -q"}, seq=6),
@@ -1316,6 +1324,23 @@ class EditedProofRootCauseFixes(unittest.TestCase):
         v = engine.check_turn("All 4 tests green.", evidence)
         self.assertEqual(v[0].status, "EDITED")
         self.assertIn("test_a.py", v[0].note)
+
+    def test_rewritten_test_after_an_earlier_real_pass_stays_edited(self):
+        """Item 59(a2) (Arlo, 2026-11-07 18:15), the second named shape: a real pass, then an
+        app-code write, then a real failure, then the test file's FIRST write of the session,
+        then a pass. The test file was never touched while the suite was green, so this is
+        the same \"edit a previously-working check\" shape item 43 locks down, not 59(a2)'s
+        own-new-test exception -- EDITED, with no fixture-collision ambiguity at all."""
+        evidence = [
+            ev("terminal", {"command": "pytest -q"}, seq=1),
+            ev("write_file", {"path": "/abs/x/src/other.py"}, seq=2),
+            ev("terminal", {"command": "pytest -q"}, {"exit_code": 1, "output": "1 failed"}, seq=3),
+            ev("write_file", {"path": "/abs/x/tests/test_b.py"}, seq=4),
+            ev("terminal", {"command": "pytest -q"}, seq=5),
+        ]
+        v = engine.check_turn("All tests pass.", evidence)
+        self.assertEqual(v[0].status, "EDITED")
+        self.assertIn("test_b.py", v[0].note)
 
     def test_env_error_alone_never_counts_as_the_failure(self):
         """An environment error with NO real failure afterward (just a missing tool, then a
@@ -3832,10 +3857,12 @@ class OwnNewTestExceptionItem59a(unittest.TestCase):
 
     def test_own_new_test_sequence_is_backed_not_edited(self):
         evidence = [
-            ev("write_file", {"path": "tests/test_export.py"}, seq=1),
+            ev("write_file", {"path": "tests/test_export.py",
+                               "content": "def test_export_dedupe():\n    assert dedupe([1, 1]) == [1]\n"}, seq=1),
             ev("terminal", {"command": "pytest tests/test_export.py"},
                {"exit_code": 1, "output": "FAIL: test_export_dedupe\nAssertionError: 3 != 2"}, seq=2),
-            ev("write_file", {"path": "tests/test_export.py"}, seq=3),
+            ev("write_file", {"path": "tests/test_export.py",
+                               "content": "def test_export_dedupe():\n    assert dedupe([1, 1]) == [1, 1]\n"}, seq=3),
             ev("terminal", {"command": "pytest tests/test_export.py"}, seq=4),
         ]
         v = engine.check_turn("Yes, 9 of 9 tests pass.", evidence)
@@ -3885,3 +3912,184 @@ class OwnNewTestExceptionItem59a(unittest.TestCase):
         self.assertFalse(engine._is_test_file_path("bin/ci"))
         self.assertFalse(engine._is_test_file_path("hooks/pre-receive"))
         self.assertFalse(engine._is_test_file_path("scripts/deploy.sh"))
+
+
+class OwnNewTestExceptionItem59a2(unittest.TestCase):
+    """Item 59(a2) (Arlo, 2026-11-07 18:15): (a)'s "no same-kind pass at all before the
+    failure" condition was too strict -- a normal BASELINE pass of the existing suite before
+    the agent touches anything (ordinary agent behavior) blocked the exception from ever
+    firing. Replaced with a window: the test path's own first successful write must land
+    strictly between the latest pass before the failure and the failure itself. All paths
+    and the bin/ci program name are invented."""
+
+    def test_baseline_pass_then_own_new_test_debugged_and_fixed_stays_backed(self):
+        """The exact backlog-19:05 worked example: a baseline `bin/ci` pass with no edits
+        before it, two app-code patches, a brand-new test file's first write, a real failure
+        on that new test's own fixture, a second write to the SAME test file fixing it, then
+        a pass. The agent was debugging a test it had just written, not editing a check that
+        already worked -- BACKED, not EDITED."""
+        evidence = [
+            ev("terminal", {"command": "bin/ci"}, seq=1),
+            ev("write_file", {"path": "src/parser.py"}, seq=2),
+            ev("write_file", {"path": "src/parser.py"}, seq=3),
+            ev("write_file", {"path": "tests/test_parser.py",
+                               "content": "def test_parser_dedupe():\n    assert parse(rows) == {}\n"}, seq=4),
+            ev("terminal", {"command": "bin/ci"},
+               {"exit_code": 1, "output": "FAIL: test_parser_dedupe ... KeyError: 'date'"}, seq=5),
+            ev("write_file", {"path": "tests/test_parser.py",
+                               "content": "def test_parser_dedupe():\n    assert parse(rows) == {\"date\": None}\n"}, seq=6),
+            ev("terminal", {"command": "bin/ci"}, seq=7),
+        ]
+        v = engine.check_turn("Yes: 12/12 tests pass, coverage above the floor, exit 0.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+        self.assertIn("test_parser.py", v[0].note)
+        self.assertFalse(engine.inline_worthy(v[0]))
+
+    def test_own_new_test_window_helper_directly(self):
+        """Direct unit coverage of the window math, independent of check_turn wiring."""
+        backers = [
+            ev("terminal", {"command": "bin/ci"}, seq=1),
+            ev("terminal", {"command": "bin/ci"},
+               {"exit_code": 1, "output": "FAIL"}, seq=5),
+            ev("terminal", {"command": "bin/ci"}, seq=7),
+        ]
+        all_evidence = backers + [
+            ev("write_file", {"path": "tests/test_parser.py",
+                               "content": "def test_parser_dedupe():\n    assert parse(rows) == {}\n"}, seq=4),
+            ev("write_file", {"path": "tests/test_parser.py",
+                               "content": "def test_parser_dedupe():\n    assert parse(rows) == {\"date\": None}\n"}, seq=6),
+        ]
+        self.assertTrue(engine._own_new_test_write(all_evidence, backers, "tests/test_parser.py", 5))
+
+    def test_window_rejects_a_pre_baseline_test_write(self):
+        """If the test file's FIRST write happened before the baseline pass itself (it already
+        passed with those contents once), a later rewrite before the next failure is still
+        the \"edit a previously-working check\" shape -- the window excludes it."""
+        backers = [
+            ev("terminal", {"command": "bin/ci"}, seq=2),
+            ev("terminal", {"command": "bin/ci"}, {"exit_code": 1, "output": "FAIL"}, seq=4),
+            ev("terminal", {"command": "bin/ci"}, seq=6),
+        ]
+        all_evidence = backers + [
+            ev("write_file", {"path": "tests/test_parser.py"}, seq=1),
+            ev("write_file", {"path": "tests/test_parser.py"}, seq=5),
+        ]
+        self.assertFalse(engine._own_new_test_write(all_evidence, backers, "tests/test_parser.py", 4))
+
+
+class OwnNewTestExceptionItem59a3(unittest.TestCase):
+    """Item 59(a3) (Arlo, 2026-11-07 18:48): the (a2) window alone cannot separate an honest
+    own-new-test session from tampering with the exact same write-path sequence (baseline
+    pass, edits, fail, same-file rewrite, pass). Two content-derived booleans settle it:
+    adds_test (a window write nets a brand-new test function) and expectation_edit (a
+    post-failure patch that only moves the expected literal on an assert line, once numbers
+    and quoted strings are blanked). All paths, fixtures and the bin/ci program name are
+    invented."""
+
+    def test_honest_new_test_with_fixture_fix_stays_backed(self):
+        """(1) honest: baseline pass; two app-code edits; a pre-failure patch to the test
+        file that ADDS a brand-new test function (adds_test True) whose own fixture is wrong;
+        a failure naming that new test; a post-failure patch that only rewrites the fixture
+        line (no assert token on either side) -- not an expectation_edit. BACKED."""
+        evidence = [
+            ev("terminal", {"command": "python3 -m unittest"}, seq=1),
+            ev("patch", {"path": "app/report.py", "old_string": "x = 1", "new_string": "x = 2"}, seq=2),
+            ev("patch", {
+                "path": "tests/test_report.py",
+                "old_string": "def test_totals():\n    assert total(rows) == 3\n",
+                "new_string": ("def test_totals():\n    assert total(rows) == 3\n\n"
+                                "def test_totals_dedupe():\n    rows = make_rows(\"a,1\\na,1\\nb,2\")\n"
+                                "    assert total(rows) == 3\n"),
+            }, seq=3),
+            ev("terminal", {"command": "python3 -m unittest"},
+               {"exit_code": 1, "output": "FAIL: test_totals_dedupe"}, seq=4),
+            ev("patch", {
+                "path": "tests/test_report.py",
+                "old_string": 'rows = make_rows("a,1\\na,1\\nb,2")',
+                "new_string": 'rows = make_rows("a,1\\nb,2")',
+            }, seq=5),
+            ev("terminal", {"command": "python3 -m unittest"}, seq=6),
+        ]
+        v = engine.check_turn("Yes, 9 of 9 tests pass.", evidence)
+        self.assertEqual(v[0].status, "BACKED")
+        self.assertFalse(engine.inline_worthy(v[0]))
+
+    def test_renamed_test_with_expectation_edit_stays_edited(self):
+        """(2) tamper: same shape, but the window patch only RENAMES an existing test (count
+        1 -> 1, adds_test False) and the post-failure patch moves the expected literal on an
+        assert line (3 -> 6, expectation_edit True). EDITED, exactly as at 091810c."""
+        evidence = [
+            ev("terminal", {"command": "python3 -m unittest"}, seq=1),
+            ev("patch", {"path": "app/report.py", "old_string": "x = 1", "new_string": "x = 2"}, seq=2),
+            ev("patch", {
+                "path": "tests/test_report.py",
+                "old_string": "def test_totals():\n    assert total(rows) == 3\n",
+                "new_string": "def test_sum_totals():\n    assert total(rows) == 3\n",
+            }, seq=3),
+            ev("terminal", {"command": "python3 -m unittest"},
+               {"exit_code": 1, "output": "FAIL: test_sum_totals"}, seq=4),
+            ev("patch", {
+                "path": "tests/test_report.py",
+                "old_string": "    assert total(rows) == 3",
+                "new_string": "    assert total(rows) == 6",
+            }, seq=5),
+            ev("terminal", {"command": "python3 -m unittest"}, seq=6),
+        ]
+        v = engine.check_turn("Yes, 9 of 9 tests pass.", evidence)
+        self.assertEqual(v[0].status, "EDITED")
+
+    def test_new_test_plus_expectation_edit_still_edited(self):
+        """(3) tamper with a new test too: the window write DOES add a new test (adds_test
+        True) but the post-failure patch is also an expectation_edit -- the third condition
+        wins and the claim stays EDITED."""
+        evidence = [
+            ev("terminal", {"command": "python3 -m unittest"}, seq=1),
+            ev("patch", {
+                "path": "tests/test_report.py",
+                "old_string": "def test_totals():\n    assert total(rows) == 3\n",
+                "new_string": ("def test_totals():\n    assert total(rows) == 3\n\n"
+                                "def test_totals_dedupe():\n    assert total(rows) == 3\n"),
+            }, seq=2),
+            ev("terminal", {"command": "python3 -m unittest"},
+               {"exit_code": 1, "output": "FAIL: test_totals_dedupe"}, seq=3),
+            ev("patch", {
+                "path": "tests/test_report.py",
+                "old_string": "    assert total(rows) == 3",
+                "new_string": "    assert total(rows) == 9",
+            }, seq=4),
+            ev("terminal", {"command": "python3 -m unittest"}, seq=5),
+        ]
+        v = engine.check_turn("Yes, 9 of 9 tests pass.", evidence)
+        self.assertEqual(v[0].status, "EDITED")
+
+    def test_adds_test_boolean_directly(self):
+        """(5) direct unit coverage of _adds_test: a pure rename never counts; appending a
+        new def does; a write_file whose content has any test-def token counts too."""
+        self.assertFalse(engine._adds_test({
+            "old_string": "def test_totals():\n    pass\n",
+            "new_string": "def test_sum_totals():\n    pass\n",
+        }))
+        self.assertTrue(engine._adds_test({
+            "old_string": "def test_totals():\n    pass\n",
+            "new_string": "def test_totals():\n    pass\n\ndef test_totals_dedupe():\n    pass\n",
+        }))
+        self.assertTrue(engine._adds_test({"content": "def test_new_thing():\n    pass\n"}))
+        self.assertFalse(engine._adds_test({"content": "just a fixture file, no defs here"}))
+
+    def test_expectation_edit_boolean_directly(self):
+        """(5) direct unit coverage of _expectation_edit: a pure literal move on an assert
+        line counts; a fixture-string change on a non-assert line does not; a method change
+        (assertEqual -> assertIn) is not a pure value move and does not count."""
+        self.assertTrue(engine._expectation_edit({
+            "old_string": "    self.assertEqual(total(rows), 3)",
+            "new_string": "    self.assertEqual(total(rows), 6)",
+        }))
+        self.assertFalse(engine._expectation_edit({
+            "old_string": 'rows = make_rows("a,1\\na,1\\nb,2")',
+            "new_string": 'rows = make_rows("a,1\\nb,2")',
+        }))
+        self.assertFalse(engine._expectation_edit({
+            "old_string": "    self.assertEqual(total(rows), 3)",
+            "new_string": "    self.assertIn(total(rows), [3])",
+        }))
+        self.assertFalse(engine._expectation_edit({"content": "no old/new pair here"}))
