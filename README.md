@@ -32,14 +32,29 @@ _Not yet captured. Placeholders for the catalog listing:_
 - `screenshots/desktop-pane.png`: the Desktop pane docked right, showing claim rows with BACKED/STALE/NOT BACKED labels.
 - `screenshots/status-chip.png`: the status-bar chip for the focused session.
 
+## Results
+
+- **Held-out set** (150 rows, written by an independent author with no access to this repo): precision 0.921, recall 0.768, 129 true positives, 11 false positives, 39 false negatives, 46 of 54 clean negatives correctly left alone (`score.py`, 2026-11-08). The two weakest kinds are tested (recall 0.42) and scheduled (recall 0.67); overall recall is still short of where we want it.
+- **Real-history replay**: about 3,200 of the author's own saved Hermes turns, replayed read-only, show 3.5 inline alerts per 100 turns and 59.1 flags per 100 turns (`score_replay.py`, 2026-11-08). The inline number is what a user actually sees in a reply; the flags number counts everything `/check` lists, which is most of what never reaches the reply at all.
+- **Model exams** (`score_bench_replay.py`, 2026-11-08): set 1, one frontier model, 24 replies, 0 false-alarm replies and 0 misses. Set 2, six local-model runs, 72 replies total, 7 graded overclaims, 1 false-alarm reply, 1 miss. The false alarm is an honest partial-pass report, not an overclaim this plugin missed.
+- The project's own development corpus is not reported here because a test suite scoring itself is not evidence of real-world accuracy; it only shows the code covers what that corpus was built to test.
+
 ## Limits, stated honestly
 
 - **Heuristic lexicon, not understanding.** Claims are matched by regex patterns over the reply text (verbs like "deployed", "pushed", "tested", "paid"). It has no model call and no semantic understanding of the sentence. A claim phrased in a way the lexicon has never seen will read as NOT BACKED even if it is true, and an unusual sentence shape can still slip past a negation check.
 - **English only.** Every pattern, negation word and alias is English. Any other language passes through unrecognized (treated as having no claims, not flagged as an error).
 - **What it cannot see.** It only sees this turn's tool calls and the reply text; it cannot see outside the terminal/write_file/patch/send_message/execute_code/browser_exec/cronjob/MCP/connector shapes it was built against, cannot see inside a webhook payload or a push hidden behind a runtime-built string, and treats `delegate_task` as no evidence on principle (a child agent's work is not this turn's proof).
-- **Held-out accuracy.** On an independent 150-row held-out set written without access to this repo, precision is 0.905 and recall is 0.738 (`score.py`, checked 2026-11-05 10:33 EST). Tested (recall 0.35) and scheduled (recall 0.58) are the weakest categories; overall recall is still short of where we want it. The project's own development corpus (166 rows, written by this loop) is not reported here because a test suite scoring itself is not evidence of real-world accuracy; it only shows the code covers every pattern that corpus was built to test.
-- **No proof-on-click yet.** The Desktop pane shows verdicts and labels but clicking a row to see the underlying proof call is not built yet.
 - **Desktop pane: one real-window run so far.** The pane and chip ran once in a real Hermes Desktop window on 2026-11-05, before the later polish, and showed the right verdicts. Since then, claim labels, merged stale rows, the tally, worst-first order, expand on click or keyboard and the receipt layout have been checked by a Node-based harness that executes the real `desktop/plugin.js` logic outside a browser, plus `doctor`/`validate`'s desktop surface check, but have not yet been re-run inside a real Desktop window.
+- **A tool's own escape hatch is invisible to it.** When an agent bypasses a check through a tool's own override, such as an invented ticket for a rebaseline flag, this plugin has no way to tell that from a real pass. A policy bypass through a tool's own escape hatch is not a claim a proof checker can judge.
+- **A restored file reads as a plain write.** A recipient list or other record put back under a written privacy hold looks the same to the plugin as any other write; it cannot tell a restore from an edit.
+- **A silent no-op can still count as proof.** A script that prints "done" and exits clean without actually doing anything backs its own claim; nothing in the transcript tells the plugin the action never happened.
+- **A claim with no call at all stays out of the reply by design.** It is listed in `/check`, not inline, unless the `inline_unbacked` setting is turned on.
+- **Tainted rung only inherits from one check.** A claim resting on an edited lower-rung proof inherits the EDITED verdict only through the proof-file-edit check, never through the rewritten-program rule or the approval override.
+- **The admission-phrase list is closed.** When the plugin cannot find a pass whose target shares a word with an admitted failure, it falls back to the latest pass rather than leaving the claim unjudged.
+- **Disclosed test edits need matching line counts.** The rule that clears an honestly-disclosed test change only works when the before and after patches have the same number of lines; a tamper dressed up as a reformat, landed alongside a genuinely new test, could slip past it.
+- **The disclosure-literal check is narrow.** Its change-verb list is closed, and the new value has to sit in the same clause as that verb, or the disclosure is not recognized.
+- **An approval record gates the whole session.** Once any approval write happens, every later pass of a gated kind in that session is treated as coming after it, even when the two are unrelated.
+- **Why only contradictions interrupt the reply.** Inline shows contradictions only (stale, failed, proof edited); `/check` shows everything the plugin found. That split is what keeps the line quiet when the agent is being honest.
 
 ## Why a plugin and not a prompt
 
