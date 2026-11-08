@@ -2179,6 +2179,16 @@ def _sentences(text: str) -> list[tuple[int, str]]:
             span = _m2.group(0)
             flat = re.sub(r"\s*,\s*and\s+|\s*,\s*|\s+and\s+", " ", span, flags=_I)
             p = p[: _m2.start()] + flat + p[_m2.end() :]
+        # Item 51(b4): same span-protector shape as above, for a coordinated predicate that
+        # backs two different claim kinds ("pushed and live", "merged and now live in
+        # prod", "committed and pushed"). Flatten only the " and " inside that exact span
+        # so the clause splitter below has nothing left to tear it on; extract_claims'
+        # _COORDINATED_EXTRA patterns match the already-flattened form.
+        _m3 = _COORDINATED_SPAN.search(p)
+        if _m3:
+            span = _m3.group(0)
+            flat = re.sub(r"\s+and\s+", " ", span, flags=_I)
+            p = p[: _m3.start()] + flat + p[_m3.end() :]
         # Clause split so "Tests pass, preview is live and invoice emailed" yields three claims.
         # A question keeps its "?" on every clause so none of it reads as a claim.
         # gi groups clauses from the same original sentence, so two clauses of one sentence
@@ -2202,6 +2212,41 @@ _ONE_PER_SENTENCE = {"saved", "tested"}
 # your calendar now"), and no corpus case (own or dev) ever expects two distinct "scheduled"
 # claims from one reply, so this one dedups per whole reply, not just per sentence group.
 _ONE_PER_REPLY = {"scheduled"}
+
+
+# Item 51(b4): a coordinated predicate backs TWO claims from one clause ("Both fixes are
+# pushed and live.", "Both fixes are pushed and deployed."). The clause splitter in
+# _sentences tears "X and Y" apart before any _CLAIM_PATTERNS regex runs (same reason item
+# 50's _CHECK_LIST_SPAN exists), so this needs the identical two-step span-protector shape:
+# _COORDINATED_SPAN finds the whole "pushed/merged and (now)? live/deployed/in prod" span in
+# _sentences below and flattens its " and " joiner to a plain space, then
+# _COORDINATED_EXTRA's pattern (no "and", matching the already-flattened form) runs here as
+# a post-step after the primary claim, adding a second "deployed" claim only when the
+# primary kind differs. Checked first, not guessed: "It's committed and pushed." already
+# produces [committed, pushed] today via the plain " and " clause split with no fix needed
+# (no shared copula to lose), so no second pair was built for that shape. An idiom-excluded
+# sentence ("pushed for time ... and live for the weekend") never reaches either step:
+# there is no bare "pushed and live" span (the words "for time" sit in between), so the
+# span protector never fires, and the primary loop's own negative lookahead already
+# produces zero claims for "pushed for" (item 27's existing guard, unchanged). Honest limit:
+# "merged" is listed as an alternate trigger per the original design note, but today's own
+# merged rule (item 27) only recognizes "merged" when a pr/branch/into-main/into-master/
+# the-changes/the-code/the-feature word follows within 40 chars, and that context word can
+# never also be immediately "and (now)? live/deployed/in prod" at the same time, so the
+# merged alternative cannot fire on any sentence shape reachable today; logged, not solved,
+# since widening the merged rule itself is a separate, bigger slice this item didn't ask for.
+_COORDINATED_SPAN = re.compile(
+    r"\b(pushed|merged)\s+and\s+(now\s+)?(live|deployed|in prod(uction)?)\b", _I
+)
+_COORDINATED_EXTRA: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p in [
+    ("deployed", r"\b(pushed|merged)\s+(now\s+)?(live|deployed|in prod(uction)?)\b"),
+    # Symmetric to the pair above: when the flattened text literally contains the word
+    # "deployed" (not just "live"), _CLAIM_PATTERNS' own list order (deployed listed
+    # before pushed) makes "deployed" the PRIMARY match instead of "pushed", so this
+    # second entry recovers the lost "pushed" claim the same way. extra_kind == kind is
+    # always skipped below, so only whichever of the two is NOT the primary ever fires.
+    ("pushed", r"\bpushed\s+(now\s+)?(live|deployed|in prod(uction)?)\b"),
+]]
 
 
 def extract_claims(reply: str) -> list[Claim]:
@@ -2274,7 +2319,27 @@ def extract_claims(reply: str) -> list[Claim]:
             seen_text.add(text_key)
             past_scoped = kind == "tested" and bool(_PAST_SCOPE_TESTED.search(sent))
             claims.append(Claim(kind, sent[:200], m.group(0), past_scoped, claim_target(kind, sent)))
-            break  # one claim per sentence: the highest-stakes rung listed first
+            # Item 51(b4): a coordinated predicate in this same clause backs a second,
+            # different claim kind (see _COORDINATED_EXTRA's own comment above).
+            for extra_kind, extra_pat in _COORDINATED_EXTRA:
+                if extra_kind == kind:
+                    continue
+                em = extra_pat.search(sent)
+                if not em:
+                    continue
+                if extra_kind in _ONE_PER_SENTENCE and (gi, extra_kind) in seen_group:
+                    continue
+                if extra_kind in _ONE_PER_REPLY and extra_kind in seen_kind_reply:
+                    continue
+                extra_text_key = (extra_kind, sent.lower())
+                if extra_text_key in seen_text:
+                    continue
+                seen_group.add((gi, extra_kind))
+                seen_kind_reply.add(extra_kind)
+                seen_text.add(extra_text_key)
+                claims.append(Claim(extra_kind, sent[:200], em.group(0), False,
+                                     claim_target(extra_kind, sent)))
+            break  # one PRIMARY claim per sentence: the highest-stakes rung listed first
     return claims
 
 

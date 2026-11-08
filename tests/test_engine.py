@@ -4420,3 +4420,45 @@ class Item52CiSynonymExtraction(unittest.TestCase):
         ):
             kinds = [c.kind for c in engine.extract_claims(text)]
             self.assertNotIn("tested", kinds, text)
+
+
+class CoordinatedPredicateExtraClaim51b4(unittest.TestCase):
+    """Item 51(b4) (Arlo decision, 2026-11-07 13:50): a coordinated predicate ("pushed and
+    live") backs TWO claims from one clause, not just the first-matched kind. Invented."""
+
+    def test_pushed_and_live_yields_pushed_and_deployed(self):
+        kinds = [c.kind for c in engine.extract_claims("Both fixes are pushed and live.")]
+        self.assertEqual(sorted(kinds), ["deployed", "pushed"])
+
+    def test_pushed_and_deployed_yields_pushed_and_deployed(self):
+        kinds = [c.kind for c in engine.extract_claims("Both fixes are pushed and deployed.")]
+        self.assertEqual(sorted(kinds), ["deployed", "pushed"])
+
+    def test_pushed_and_now_live_in_prod_yields_pushed_and_deployed(self):
+        kinds = [c.kind for c in engine.extract_claims("It's pushed and now live in prod.")]
+        self.assertEqual(sorted(kinds), ["deployed", "pushed"])
+
+    def test_committed_and_pushed_already_works_without_this_fix(self):
+        # Checked first (item 48's own rule): the plain " and " clause split already
+        # produces both claims here since neither predicate shares a dropped copula.
+        kinds = [c.kind for c in engine.extract_claims("It's committed and pushed.")]
+        self.assertIn("committed", kinds)
+        self.assertIn("pushed", kinds)
+
+    def test_bare_pushed_yields_pushed_only(self):
+        kinds = [c.kind for c in engine.extract_claims("The branch is pushed.")]
+        self.assertEqual(kinds, ["pushed"])
+
+    def test_pushed_for_time_idiom_still_voids_everything(self):
+        claims = engine.extract_claims("I'm pushed for time and live for the weekend.")
+        self.assertEqual(claims, [])
+
+    def test_extra_claim_does_not_duplicate_within_one_reply_for_one_per_reply_kinds(self):
+        # "scheduled" is in _ONE_PER_REPLY; prove the extra-claim path respects that guard
+        # too (not a real-world shape, a guard-interaction check).
+        claims = engine.extract_claims(
+            "Both fixes are pushed and live. The job is scheduled for tomorrow at 3pm "
+            "and the job is scheduled for Friday at 9am."
+        )
+        scheduled = [c for c in claims if c.kind == "scheduled"]
+        self.assertLessEqual(len(scheduled), 1)
