@@ -322,7 +322,7 @@ _SEND_TOOL = re.compile(r"(^|_|\.|-)(send|post|reply|tweet|email|mail|message|dm
 _WRITE_TOOLS = {"write_file", "patch", "edit_file", "str_replace", "create_file", "apply_patch", "file_write", "replace_in_file"}
 _DRAFT_TOOL = re.compile(r"draft", _I)
 # Source/config file extensions: a write_file/patch to one of these is "saved_code" (code
-# family), not generic "saved" (document family) — see Discovered item 18's logged residual.
+# family), not generic "saved" (document family); see Discovered item 18's logged residual.
 # Deliberately excludes .md/.txt/.html (those are usually documents, not code, even though an
 # .html file can be code; a path-extension heuristic cannot be perfect, only better than nothing).
 _CODE_EXTENSIONS = {
@@ -1062,7 +1062,7 @@ def _failure_reason(result: Any, status: Optional[str] = None) -> str:
 # Real Hermes tool names (verified in ~/.hermes/hermes-agent/tools, read-only, 2026-11-05):
 # execute_code (code_execution_tool.py), browser_exec (browser_use_cli.py: runs Python against
 # browser helpers, not a fixed verb), delegate_task (delegate_tool.py: spins a child agent, proves
-# nothing itself — the child's own tool calls are what would prove something, and this plugin only
+# nothing itself; the child's own tool calls are what would prove something, and this plugin only
 # ever sees the parent session's ledger), cronjob_manage (cronjob_tools.py).
 _CODE_TEXT_TOOLS = {"execute_code", "browser_exec"}
 _NO_EVIDENCE_TOOLS = {"delegate_task", "delegate", "oneshot_delegate"}
@@ -1942,7 +1942,7 @@ _NEGATION = re.compile(
     # "As soon as the deploy finishes, I'll ping you." describe a future trigger, not a
     # completed action this turn). Scoped to "the" noun-phrase triggers only, not "when it"/
     # "after it"/"this"/"that", which risk voiding real past-tense completions ("After it
-    # finished, I deployed it." must still count) — a narrower, deliberately safer slice.
+    # finished, I deployed it." must still count); a narrower, deliberately safer slice.
     r"when the|after the|as soon as|"
     r"you\s+already|'s\s+\w+\s+already|was\s+already\b|"
     r"\b(he|she|they|someone|anyone)\s+(said|told|mentioned|claimed|reported|says|tells|told us|let (us|me) know)\b|"
@@ -2272,7 +2272,7 @@ def extract_claims(reply: str) -> list[Claim]:
         # freestanding claim on its own, so drop it outright rather than guessing whether the
         # clause it continues was negated (a broader "carry negation across every clause"
         # rule risks voiding genuinely separate claims after "but", e.g. "I haven't tested
-        # the login flow, but I pushed the fix and deployed it" — not attempted this tick).
+        # the login flow, but I pushed the fix and deployed it"; not attempted this tick).
         if re.match(r"^or\b", sent, _I):
             continue
         if _QUESTION.search(sent):

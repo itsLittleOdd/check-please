@@ -25,7 +25,7 @@ Check, Please: last reply
 
 ## Screenshots
 
-_Not yet captured (no Electron host available on this build box). Placeholders for the catalog listing:_
+_Not yet captured. Placeholders for the catalog listing:_
 
 - `screenshots/check-line.png`: a Hermes chat reply with the `Check:` line under it (one backed, one stale, one not backed).
 - `screenshots/check-detail.png`: the `/check` command output showing the full breakdown with proof lines.
@@ -39,7 +39,7 @@ _Not yet captured (no Electron host available on this build box). Placeholders f
 - **What it cannot see.** It only sees this turn's tool calls and the reply text; it cannot see outside the terminal/write_file/patch/send_message/execute_code/browser_exec/cronjob/MCP/connector shapes it was built against, cannot see inside a webhook payload or a push hidden behind a runtime-built string, and treats `delegate_task` as no evidence on principle (a child agent's work is not this turn's proof).
 - **Held-out accuracy.** On an independent 150-row held-out set written without access to this repo, precision is 0.905 and recall is 0.738 (`score.py`, checked 2026-11-05 10:33 EST). Tested (recall 0.35) and scheduled (recall 0.58) are the weakest categories; overall recall is still short of where we want it. The project's own development corpus (166 rows, written by this loop) is not reported here because a test suite scoring itself is not evidence of real-world accuracy; it only shows the code covers every pattern that corpus was built to test.
 - **No proof-on-click yet.** The Desktop pane shows verdicts and labels but clicking a row to see the underlying proof call is not built yet.
-- **Desktop pane not yet run in a real Desktop window.** The pane and chip pass a Node-based harness that executes the real `desktop/plugin.js` logic outside a browser, plus `doctor`/`validate`'s desktop surface check. Neither has run inside an actual Hermes Desktop/Electron window on this build machine, so real CSS layout, plugin-SDK subscription timing and docking behavior are unverified.
+- **Desktop pane: one real-window run so far.** The pane and chip ran once in a real Hermes Desktop window on 2026-11-05, before the later polish, and showed the right verdicts. Since then, claim labels, merged stale rows, the tally, worst-first order, expand on click or keyboard and the receipt layout have been checked by a Node-based harness that executes the real `desktop/plugin.js` logic outside a browser, plus `doctor`/`validate`'s desktop surface check, but have not yet been re-run inside a real Desktop window.
 
 ## Why a plugin and not a prompt
 

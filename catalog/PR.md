@@ -99,9 +99,11 @@ Run from the plugin repo root at the exact sha this PR pins:
   that corpus, not real-world accuracy.
 - A delegated sub-agent's claims are judged only by that child's own tool
   calls, kept separate from the parent session's evidence.
-- Desktop pane and chip pass a Node-driven render harness plus the doctor
-  desktop check. Expand on click or keyboard shows the proof. Not yet run
-  inside a real Electron Desktop window on the build machine.
+- Desktop pane and chip ran once in a real Hermes Desktop window and showed
+  the right verdicts. The polish since that run (claim labels, merged stale
+  rows, tally, worst-first order, expand on click or keyboard, receipt
+  layout) has been checked by a Node-driven render harness plus the doctor
+  desktop check, not yet re-run in a real window.
 
 ## Owner submission and non-affiliation
 

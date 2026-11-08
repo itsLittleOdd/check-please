@@ -96,8 +96,8 @@ Exact `/check` row:
 Storyboard asks for "Proven: saved"; the real ladder-family fix (backlog item 18/19)
 now reports "drafted" for a freshly-written invoice path (saved and drafted are both in
 the document family, drafted is the file's actual rung on its first write). Say "drafted"
-on camera, not "saved" — that line was corrected in README.md during item 18 and this
-script should not reintroduce the old wording.
+on camera, not "saved" (that line was corrected in README.md during item 18, and this
+script should not reintroduce the old wording).
 
 ## Full `/check` detail report (shots 4-6 combined, what the Desktop pane and `/check`
 both read from)
@@ -119,8 +119,11 @@ Check, Please: last reply
   8 needs a real approved send call (an external send still needs the owner's own
   review and go-ahead to film for real); shot 9's "1 contradicted ... bounced" scenario
   is not something the current engine detects (it has no delivery-receipt/bounce
-  evidence kind) — do not film shot 9 as scripted until that gap is closed or the line
+  evidence kind); do not film shot 9 as scripted until that gap is closed or the line
   is rewritten to match what the plugin actually reports today.
-- The Desktop pane's visual rendering (shots 3-6's actual on-screen pane) is still
-  unverified in a real Electron window (backlog item 10, open). This script gives the
-  exact text the pane would show once that smoke test exists; it is not a screenshot.
+- The Desktop pane ran once in a real Hermes Desktop window and showed the right
+  verdicts. The polish since that run (claim labels, merged STALE rows, tally,
+  worst-first order, expand on click or keyboard, receipt layout) is exact as written
+  below and has been checked by the Node render harness and the doctor desktop check,
+  but has not yet been filmed in a real window. This script gives the exact text the
+  pane would show; it is not a screenshot.

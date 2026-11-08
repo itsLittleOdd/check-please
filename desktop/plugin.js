@@ -1,4 +1,4 @@
-// Check, Please — Desktop pane + status-bar chip.
+// Check, Please: Desktop pane + status-bar chip.
 // SDK surface only: @hermes/plugin-sdk, react, react/jsx-runtime. No app DOM reach, no raw bridge.
 //
 // Data path (backlog item 11): ctx.rest('/claims?session_id=...') reaches this package's own
@@ -48,7 +48,7 @@ function verdictStyle(verdict) {
 }
 
 // Item 29(d): worst verdict first, per the backlog's own named order. Any status outside
-// that list (EDITED, PARTIAL — items 43/44) ranks between STALE and BACKED: still worth a
+// that list (EDITED, PARTIAL: items 43/44) ranks between STALE and BACKED: still worth a
 // look, but not literally the spec's top two. Array.sort is stable in Node, so claims tied
 // on rank keep the backend's own order.
 const ROW_ORDER = ['NOT_BACKED', 'FAILED', 'STALE', 'BACKED']
@@ -63,7 +63,7 @@ function sortedByRank(claims) {
 // Item 29(b): two STALE rows backed by the same stale run (same claim.proof, the backend's
 // own evidence-detail string) are one row with a count, not a duplicate line each. Scoped to
 // STALE only, per the backlog's own wording ("two STALE rows for the same test run"), and only
-// when both sides actually name a proof string — two STALE claims with no proof info at all
+// when both sides actually name a proof string. Two STALE claims with no proof info at all
 // are never merged, since there is nothing to confirm they share the same run.
 function dedupeSameRunStale(claims) {
   const merged = []
@@ -102,7 +102,7 @@ function tallyText(claims) {
 }
 
 // Item 29(e): the row's own expand detail text. We only have what the backend's
-// verdict_to_dict() already sends (claim.proof, claim.note) — no relative-time field exists
+// verdict_to_dict() already sends (claim.proof, claim.note); no relative-time field exists
 // in that payload today, so this reports the proof string or the flagged reason honestly
 // rather than inventing a timestamp the backend doesn't send.
 // Item 29(a): the row now shows a short label, not the raw mid-sentence fragment, so the
@@ -196,7 +196,7 @@ function CheckPane({ ctx }) {
             className: 'px-2 py-3 text-(--ui-text-tertiary)',
             children: 'No claims checked yet this session.'
           })
-        // Item 29(f): the guest-check look from the storyboard — line items, then a dotted
+        // Item 29(f): the guest-check look from the storyboard, line items, then a dotted
         // rule, then the tally read like a receipt total (bottom, not top). Text labels
         // still carry the status (item 12: color is never the only signal), so this is a
         // layout/order change only, never a new signal.
