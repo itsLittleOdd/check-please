@@ -1,7 +1,7 @@
 name: check-please
 label: Check, Please
 kind: standalone
-version: 0.3.0
+version: 0.4.0
 requires_hermes: ">=0.22.6"
 description: >
   Pairs every "done" claim in your agent's reply (sent, deployed, pushed, tests pass, saved, paid)

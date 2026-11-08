@@ -3,6 +3,78 @@
 All notable changes to Check, Please are logged here. Versions follow the
 project's own pace, not strict semver, while the plugin is pre-catalog.
 
+## 0.4.0 - 2026-11-08
+
+Receipts, not a lie detector: a new verdict family, catch-before-send, subagents,
+cron honesty, and a long real-world false-alarm hardening pass (Day 5 to the freeze).
+
+- Added two new verdicts. EDITED ("proof edited") fires when a check passed only
+  after the agent changed the test, script, hook, gate data file, or approval
+  record it was being checked by; a claim resting on a lower-rung claim that is
+  itself EDITED inherits EDITED. Disclosing the edit in the reply clears it to
+  BACKED with a note. PARTIAL fires when a whole-suite claim is backed only by a
+  narrowed run (a single file, `-k`, a module) after an earlier failure in the
+  same turn; a clean single-shot targeted run with no earlier failure stays
+  BACKED.
+- Settled the surface policy: the plugin pitches itself as receipts, not a lie
+  detector. STALE, FAILED and EDITED verdicts go inline by default; a claim with
+  no backing call at all is listed in `/check` only, not inline, unless the new
+  `inline_unbacked` setting turns that back on for sent, paid, deployed, pushed,
+  deleted and scheduled claims.
+- Added catch before send: `pre_verify` now checks the draft reply itself against
+  this turn's own evidence, not only cross-turn staleness, and returns a plain
+  two-sentence directive naming the claim and the fix before a stale or failed
+  claim reaches the user. A `next_turn_nudge` fallback covers non-coding turns
+  that `pre_verify` does not fire on. Both are settings, default on.
+- Added the subagent claim check: a parent session's relayed claims about a
+  child's work are now backed only by what that child actually did, never mixed
+  across children; `/check subagents` lists any unresolved child claim.
+- Added the cron honesty guard: an unattended cron reply gets its worst
+  inline-worthy claim prepended as a one-line check at the top of the delivered
+  output. A `[SILENT]` or empty reply is never touched by this, by
+  `transform_llm_output`, or by either nudge.
+- Added failure-result detection: a tool call that ran but failed (nonzero exit,
+  a failure count above zero, a traceback, an HTTP 4xx/5xx status, "0 passed")
+  now backs nothing and the matching claim reads FAILED with a short, specific
+  reason instead of a generic one.
+- Added target matching: a claim naming a person, branch, environment or file is
+  compared against the backing call's own target; a mismatch reads NOT BACKED
+  with the actual target named ("deployed to staging, not prod").
+- Added `check-please audit`, a CLI command that replays your own saved session
+  history read-only and prints a summary of claims checked, backed and the top
+  not-backed ones.
+- Finished the Desktop pane: short claim labels instead of mid-sentence
+  fragments, repeated STALE rows for the same run merged into one row with a
+  count, a header tally, worst-verdict-first ordering, click or keyboard expand
+  to see the proof or the flagged reason, and a receipt-style layout with a
+  dashed rule above the total.
+- Spent most of this cycle cutting false alarms against real saved Hermes turns
+  and a small overclaim bench: adjective and noun uses that are not an action
+  (paid plans, saved passwords, scheduled jobs), third-party subjects and
+  reported speech, data and report lines, mentions inside quotes or code, chained
+  shell commands (`&&`, `;`, `||`, a single pipe), partial test-pass counts, a
+  weak failure-text marker no longer overriding an explicit zero exit code plus
+  an explicit pass summary, an honest same-reply admission of a different
+  failure no longer flipping an unrelated claim to FAILED, and an agent's own
+  new test (written before it ever failed) no longer reading as tampering while
+  a renamed or rewritten existing assertion still does.
+- Widened evidence coverage: a project's own deploy and mail tools by path, a
+  shell write (`cp`, `sed -i`, redirects, `tee`) counting as an edit just like a
+  file write, a `crontab -l` read never backing a schedule claim, a check
+  program named plainly `ci` now counting as tested evidence, and chain-credit
+  rules so a failed second stage after a real first-stage pass does not
+  overclaim and a real failure is not missed either.
+- Widened claim extraction for answer-style replies: a contracted "it's live",
+  a leading "Confirmed:" label, a coordinated "pushed and live" sentence now
+  reading as both a pushed and a deployed claim, verification language
+  ("passed all checks", "is verified and restorable", "CI pipeline is green"),
+  and an approval record written by hand counting the same way an edited test
+  does.
+- Honest limits, stated plainly rather than fixed: the lexicon is closed and
+  English only; a bypass performed through a tool's own escape hatch, a
+  recipient list restored under a written hold, and a script that prints "done"
+  and changes nothing all leave no signal this plugin can judge.
+
 ## 0.3.0 - 2026-11-05
 
 Desktop pane and the data path behind it (Day 3 to 4 work).

@@ -57,7 +57,7 @@ Every API the plugin uses, nothing else:
   declarations, `verify_nudge` config), `desktop/plugin.js` (pane + chip),
   `dashboard/manifest.json` + `dashboard/plugin_api.py` (claims/jobs routes).
 - `subdir: ""`, `requires_hermes: ">=0.22.6"`, `tier: community`,
-  `category: tools`, version `0.3.0` (matches `plugin.yaml`).
+  `category: tools`, version `0.4.0` (matches `plugin.yaml`).
 - No changes to Hermes core. No binaries shipped.
 
 ## How to Test
@@ -71,7 +71,7 @@ Run from the plugin repo root at the exact sha this PR pins:
    are env-gated: no fastapi/ruamel.yaml in plain python3), 0 fail.
 3. Hermes venv: `"$PY" -m unittest discover -s tests`: 94/94 pass, 0 skip
    (confirmed 2026-11-05 13:32 EST).
-4. `hermes plugins doctor . --ci`: OK, manifest check-please 0.3.0, 4 hooks.
+4. `hermes plugins doctor . --ci`: OK, manifest check-please 0.4.0, 4 hooks.
 5. `hermes plugins validate . --install-deps`: "Validation passed.", zero
    warning lines.
 6. Isolated-install smoke (`tests/install_smoke.sh`): PASS, installed and
