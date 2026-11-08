@@ -1032,7 +1032,7 @@ def _failure_reason(result: Any, status: Optional[str] = None) -> str:
     a call that actually passed. Falls back to the old generic sentence when nothing more
     specific is found, so no caller sees an empty note."""
     if status and str(status).lower() in {"error", "blocked", "denied", "failed", "timeout", "cancelled"}:
-        return f"call status: {status}"
+        return _STATUS_WORDS.get(str(status).lower(), "failed")
     data = _as_dict(result)
     text_blob = _result_text_blob(data) if data else str(result or "")
     m = _HTTP_ERROR_STATUS.search(text_blob)
@@ -1068,8 +1068,15 @@ def _failure_reason(result: Any, status: Optional[str] = None) -> str:
                 pass
         st = str(data.get("status", "")).lower()
         if st in {"error", "failed", "blocked", "denied"}:
-            return f"call status: {st}"
+            return _STATUS_WORDS[st]
     return _GENERIC_FAILURE_REASON
+
+
+# Item 69 (Arlo, 2026-11-08): plain words for a failed call's status. Notes read
+# "<kind> call <reason>", so the old "call status: blocked" printed "sent call call status:
+# blocked" in the reply line.
+_STATUS_WORDS = {"error": "returned an error", "failed": "failed", "blocked": "was blocked",
+                 "denied": "was denied", "timeout": "timed out", "cancelled": "was cancelled"}
 
 
 # Real Hermes tool names (verified in ~/.hermes/hermes-agent/tools, read-only, 2026-11-05):

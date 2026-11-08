@@ -652,7 +652,7 @@ class FailureReason(unittest.TestCase):
         self.assertEqual(engine._failure_reason({"error": "bounced"}), "bounced")
 
     def test_status_kwarg_reason(self):
-        self.assertEqual(engine._failure_reason({"output": "ok"}, status="timeout"), "call status: timeout")
+        self.assertEqual(engine._failure_reason({"output": "ok"}, status="timeout"), "timed out")
 
     def test_nothing_specific_falls_back_to_generic(self):
         self.assertEqual(engine._failure_reason({"success": False}), engine._GENERIC_FAILURE_REASON)
