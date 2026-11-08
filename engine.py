@@ -2566,7 +2566,38 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
         else:
             verdicts.append(Verdict(claim, "NOT_BACKED", None, rung,
                                     f"no {claim.kind} call this turn" + (f"; proven: {rung}" if rung else "")))
-    return [_approval_override(v, evidence, reply) for v in verdicts]
+    return [_tainted_rung_override(_approval_override(v, evidence, reply), evidence, reply)
+            for v in verdicts]
+
+
+def _tainted_rung_override(verdict: "Verdict", evidence: list, reply: str) -> "Verdict":
+    """Item 53 (TAINTED RUNG). A NOT_BACKED claim with no evidence of its own kind cites a
+    lower rung in the same ladder family as 'proven: X' (see _highest_rung / check_turn's
+    NOT_BACKED branch). That citation is misleading when the lower rung's OWN proof only
+    passed after a proof-file edit (e.g. a deployed claim resting on a push that only
+    succeeded after a hook swap): the rung never actually proved anything independent, so
+    the claim inherits EDITED, never FAILED or STALE (this is a weaker echo of the same
+    item 43 check, not a new failure signal). Disclosure and item 59(a)'s own-new-test
+    exception both carry over: if the rung's own claim would read BACKED (disclosed, or an
+    honest own-new-test edit), there is nothing tainted to inherit."""
+    if verdict.status != "NOT_BACKED" or not verdict.proven_rung:
+        return verdict
+    rung = verdict.proven_rung
+    rung_backers = [e for e in evidence if e.kind in _BACKS.get(rung, {rung})]
+    edited = _find_edited_proof(evidence, rung_backers)
+    if not edited:
+        return verdict
+    _failed_ev, pass_ev, proof_write, own_new_test = edited
+    if own_new_test:
+        return verdict
+    proof_name = proof_write.detail or "a proof file"
+    if _disclosed_edit(reply, proof_write.detail,
+                        getattr(proof_write, "expectation_edit", False),
+                        getattr(proof_write, "expectation_literals", ())):
+        return verdict
+    return Verdict(verdict.claim, "EDITED", pass_ev, rung,
+                    f"{verdict.claim.kind} claim rests on a {rung} that passed only "
+                    f"after {proof_name} was edited")
 
 
 def _approval_override(verdict: "Verdict", evidence: list, reply: str) -> "Verdict":
