@@ -16,14 +16,16 @@ platforms: []
 title: "Check, Please"
 onboarding: false
 known_issues:
-  - "Heuristic lexicon, English-only patterns. It cannot see webhook payload bodies, runtime-built strings, or what a delegated sub-agent did."
-  - "Held-out benchmark (150 hand-written replies, independent author): precision 0.908, recall 0.768, confirmed 2026-11-05. Two kinds (tested, scheduled) are still below a 0.70 per-kind recall floor. Own test corpus scores near 1.000, which only means it covers every pattern that corpus tests, not real-world performance."
-  - "Desktop pane has no proof-on-click yet and has not been smoke-tested in a real Electron Desktop window."
+  - "Heuristic lexicon, English-only patterns. It cannot see webhook payload bodies or runtime-built strings."
+  - "A delegated sub-agent's claims are judged only by that child's own tool calls, kept separate from the parent session's evidence; see /check subagents."
+  - "Accuracy numbers (held-out precision and recall, real-world false-alarm rates) live in the README's dated Results section. The own test corpus scoring near perfect only means it covers what that corpus tests, not real-world performance."
+  - "The Desktop pane and status-bar chip pass a Node-driven render harness plus the doctor desktop check. Expand on click or keyboard shows the proof. Not yet run inside a real Electron Desktop window on the build machine."
 capabilities:
   provides_tools: []
   provides_hooks:
     - pre_llm_call
     - post_tool_call
+    - subagent_stop
     - transform_llm_output
     - pre_verify
   provides_middleware: []

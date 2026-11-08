@@ -25,7 +25,8 @@ no extra model call, no network call, stdlib only on the engine side.
 
 Every API the plugin uses, nothing else:
 
-- Hooks: `pre_llm_call`, `post_tool_call`, `transform_llm_output`, `pre_verify`
+- Hooks: `pre_llm_call`, `post_tool_call`, `subagent_stop`, `transform_llm_output`,
+  `pre_verify`
 - `ctx.state` (file-backed, plugin-scoped) for the session ledger, cross-turn
   staleness record, per-cron-job tally, and daily digest log, all with
   explicit size caps and trim logic
@@ -52,9 +53,11 @@ Every API the plugin uses, nothing else:
 ## Changes Made
 
 - New standalone plugin: `engine.py` (claim extraction, evidence
-  classification, verdicts, ladder-family scoping), `__init__.py` (4 hooks,
-  `/check` command, ctx.state wiring), `plugin.yaml` (manifest, hook
-  declarations, `verify_nudge` config), `desktop/plugin.js` (pane + chip),
+  classification, verdicts, ladder-family scoping), `__init__.py` (5 hooks,
+  `/check` command, ctx.state wiring), `audit.py` (the `check-please audit`
+  CLI command, read-only session replay), `plugin.yaml` (manifest, hook
+  declarations, settings), `desktop/plugin.js` (pane + chip, claim labels,
+  merged stale rows, worst-first order, expand on click or keyboard),
   `dashboard/manifest.json` + `dashboard/plugin_api.py` (claims/jobs routes).
 - `subdir: ""`, `requires_hermes: ">=0.22.6"`, `tier: community`,
   `category: tools`, version `0.4.0` (matches `plugin.yaml`).
@@ -65,36 +68,40 @@ Every API the plugin uses, nothing else:
 Run from the plugin repo root at the exact sha this PR pins:
 
 1. `scripts/validate_plugin_catalog.py catalog/check-please.yaml` (Hermes
-   checkout, read-only use): PASS except the two allowed remaining TODOs
-   (sha, image), confirmed 2026-11-05 13:32 EST.
-2. `python3 -m unittest discover -s tests`: 91 ran, 85 pass + 6 skip (skips
+   checkout, read-only use): PASS except the remaining TODOs (repo, sha,
+   image); the validator flags sha and image as format errors today (the
+   repo field is a syntactically valid placeholder URL under a not-yet-
+   created account, so it does not itself raise a validator error), confirmed
+   2026-11-08 13:02 EST.
+2. `python3 -m unittest discover -s tests`: 560 ran, 552 pass + 8 skip (skips
    are env-gated: no fastapi/ruamel.yaml in plain python3), 0 fail.
-3. Hermes venv: `"$PY" -m unittest discover -s tests`: 94/94 pass, 0 skip
-   (confirmed 2026-11-05 13:32 EST).
-4. `hermes plugins doctor . --ci`: OK, manifest check-please 0.4.0, 4 hooks.
+3. Hermes venv: `"$PY" -m unittest discover -s tests`: 569 ran, 567 pass + 2
+   skip, 0 fail (confirmed 2026-11-08 13:02 EST).
+4. `hermes plugins doctor . --ci`: OK, manifest check-please 0.4.0, 5 hooks.
 5. `hermes plugins validate . --install-deps`: "Validation passed.", zero
    warning lines.
 6. Isolated-install smoke (`tests/install_smoke.sh`): PASS, installed and
-   enabled `check-please@e27fd5f` in a throwaway `HERMES_HOME` under
-   `~/.hermes/cache/scratch`, doctor OK there, real `~/.hermes` confirmed
-   untouched, temp dir confirmed deleted after. Run 2026-11-05 13:32 EST.
-7. Held-out score (`holdout/score.py`, independent 150-row set, author has no
-   repo access): precision 0.908, recall 0.768 (run 2026-11-05 13:32 EST).
-   Two kinds below a 0.70 per-kind recall floor: scheduled (0.67), tested
-   (0.46); see the repo's PROGRESS.md for the open item and the phrasing
-   families still unsolved.
+   enabled `check-please` at the commit this PR pins in a throwaway
+   `HERMES_HOME` under `~/.hermes/cache/scratch`, doctor OK there, real
+   `~/.hermes` confirmed untouched, temp dir confirmed deleted after.
+7. Held-out score: see the README's Results section for the dated numbers.
+   Running `holdout/score.py` directly is Arlo-only (sealed set); item 64 in
+   the build loop owns publishing those numbers.
 
 ## Honest limits (also in known_issues and README)
 
 - Heuristic lexicon, English-only. Can miss claims phrased outside the
   patterns it knows, and can miss evidence hidden in a runtime-built string,
   a webhook body, or fenced/inline code it cannot parse as text.
-- Held-out recall (0.768) is below the 0.80 target; tested (0.46) and
-  scheduled (0.67) are the weak kinds. Own 160+-row test corpus scores near
-  1.000, which proves pattern coverage of that corpus, not real-world recall.
-- Desktop pane has no proof-on-click yet and has never run inside a real
-  Electron Desktop window; it has only been checked by reading the source,
-  a Node-driven unit-level render harness, and a documented empty state.
+- Held-out precision and recall, and which claim kinds are weakest, are
+  dated and sourced in the README's Results section, not restated here.
+  Own test corpus scores near perfect, which proves pattern coverage of
+  that corpus, not real-world accuracy.
+- A delegated sub-agent's claims are judged only by that child's own tool
+  calls, kept separate from the parent session's evidence.
+- Desktop pane and chip pass a Node-driven render harness plus the doctor
+  desktop check. Expand on click or keyboard shows the proof. Not yet run
+  inside a real Electron Desktop window on the build machine.
 
 ## Owner submission and non-affiliation
 
