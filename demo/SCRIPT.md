@@ -2,7 +2,7 @@
 
 Shot numbers and timings below match Wren's storyboard ("Check, Please: 83 seconds",
 `../wren/IDEAS.md` section 3). This file maps each shot that shows plugin output to the
-exact tool calls and the exact text our code produces, so Justin can film the real thing
+exact tool calls and the exact text our code produces, so the owner can film the real thing
 in one take instead of reading a script aloud.
 
 All output below is a real, dated run, not hand-typed: `tests/demo_hermes.py` drives the
@@ -15,7 +15,7 @@ PY=$(ls ~/.hermes/installs/*/environments/*/venv/bin/python | head -1)
 "$PY" tests/demo_hermes.py
 ```
 
-Last run: 2026-11-05, commit 749e33e (HEAD at the time of this script).
+Last run: 2026-11-08, commit 942fabf (HEAD at the time of this script).
 
 Invented names only: "Dana" is a placeholder client, not a real person.
 
@@ -45,7 +45,7 @@ Tool calls:
 - `terminal`: `vercel deploy --prod` -> exit 0, "https://preview-dana.vercel.app"
 - `write_file`: path `drafts/invoice-dana.md`
 
-Reply text (shot 1, the Discord ping Justin sees on the bar top):
+Reply text (shot 1, the Discord ping the owner sees on the bar top):
 ```
 All set. Tests pass, preview is live, invoice emailed to Dana.
 ```
@@ -53,13 +53,16 @@ All set. Tests pass, preview is live, invoice emailed to Dana.
 Exact Check line transform_llm_output appends to that same reply (shot 7, "same check
 on your phone"):
 ```
-Check: 1 backed, 1 stale, 1 not backed. First issue: "Tests pass" (tests passed in turn 1 (python3 -m unittest discover -s tests), code changed since, no rerun this turn). /check for detail.
+Check: 1 backed, 1 stale. First issue: "Tests pass" (tests passed in turn 1 (python3 -m unittest discover -s tests), code changed since, no rerun this turn). /check for detail.
 ```
 
-Honest gap from the storyboard: shot 7's scripted line reads "1 not sent"; the real
-engine says "1 not backed" (the generic verdict label, not a sent-specific word, since
-the same line covers every evidence kind). Film the real line, not the scripted one, or
-have Justin's voiceover say "not backed" instead of "not sent."
+This is a receipts line, not a lie detector. A claim with no matching call at all (the
+invoice "emailed" line below) is never shown inline by default; it goes in `/check` and
+in the Desktop pane. The `inline_unbacked` setting flips that for a user who wants it
+inline. The storyboard's shot 7 line ("1 not sent") does not match the real engine
+output: the inline line names only the stale test claim, and the "invoice emailed" line
+shows up as NOT BACKED in `/check` (shot 6) and in the Desktop pane, not inline. Film
+the real line above, not the scripted one.
 
 ## Shot 4: "Tests pass" line detail (amber, STALE)
 
@@ -113,11 +116,11 @@ Check, Please: last reply
 
 - Shot 2 ("Is it?"), shot 8 (approve-and-send flow), shot 9 (overnight cron digest with
   a bounce), and shot 10 (title card) are not reproduced by `tests/demo_hermes.py`. Shot
-  8 needs a real approval + send_message call (Boundary 1, needs Justin in the loop to
-  film for real); shot 9's "1 contradicted ... bounced" scenario is not something the
-  current engine detects (it has no delivery-receipt/bounce evidence kind) — do not film
-  shot 9 as scripted until that gap is closed or the line is rewritten to match what the
-  plugin actually reports today.
+  8 needs a real approved send call (an external send still needs the owner's own
+  review and go-ahead to film for real); shot 9's "1 contradicted ... bounced" scenario
+  is not something the current engine detects (it has no delivery-receipt/bounce
+  evidence kind) — do not film shot 9 as scripted until that gap is closed or the line
+  is rewritten to match what the plugin actually reports today.
 - The Desktop pane's visual rendering (shots 3-6's actual on-screen pane) is still
   unverified in a real Electron window (backlog item 10, open). This script gives the
   exact text the pane would show once that smoke test exists; it is not a screenshot.
