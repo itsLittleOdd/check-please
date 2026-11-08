@@ -84,9 +84,9 @@ Run from the plugin repo root at the exact sha this PR pins:
    enabled `check-please` at the commit this PR pins in a throwaway
    `HERMES_HOME` under `~/.hermes/cache/scratch`, doctor OK there, real
    `~/.hermes` confirmed untouched, temp dir confirmed deleted after.
-7. Held-out score: see the README's Results section for the dated numbers.
-   Running `holdout/score.py` directly is Arlo-only (sealed set); item 64 in
-   the build loop owns publishing those numbers.
+7. Held-out score: see the README Results section for the dated numbers. The
+   held-out rows and the sealed exam records are kept outside this repo by
+   design, so this step is read-only.
 
 ## Honest limits (also in known_issues and README)
 
