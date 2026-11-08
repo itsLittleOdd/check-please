@@ -1870,9 +1870,18 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
                   r"(job|task|cron)?\s*(now )?runs? (daily|weekly|every|on (a|the) schedule|on the first\b)|is (now )?running on a schedule|"
                   r"is set to (run|repeat|fire)\b|repeats? (daily|weekly|every)\b|has a cron trigger\b|recurring \w+ set\b|\w+ set\b.{0,10}\$\d|"
                   r"(is |it'?s )?set for (today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week|\d)|"
+                  # Item 55 (bug fix): a bare month name ("march", "may") or the short
+                  # day forms "sat"/"sun" read as calendar words with no actual date
+                  # attached ("whatever may come up", "the sat phone handoff", "the
+                  # march to the finish line"). A month name now counts only when
+                  # followed by whitespace and a day number ("May 3", "Dec 12th");
+                  # "sat"/"sun" count only the same way. Full day names and the other
+                  # short day forms (mon/tue/tues/wed/thu/thurs/fri) are unconditional,
+                  # since they are not common English words on their own.
                   r"you'?re all set for\b(?=[^.!?]{0,40}\b(\d{1,2}(:\d{2})?\s*(am|pm)\b|\d{1,2}:\d{2}\b|noon|midnight|"
-                  r"mon(day)?|tues?(day)?|wed(nesday)?|thu(rs(day)?)?|fri(day)?|sat(urday)?|sun(day)?|"
-                  r"jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(tember)?|oct(ober)?|nov(ember)?|dec(ember)?)\b)|"
+                  r"mon(day)?|tues?(day)?|wed(nesday)?|thu(rs(day)?)?|fri(day)?|saturday|sunday|"
+                  r"(?:sat|sun)(?=\s+\d)|"
+                  r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?=\s+\d))\b)|"
                   r"(it'?s|is|are) on .{0,20}\bcalendar\b|locked in (a|the) (meeting|call|time|slot|spot|appointment)|got you (a spot|down for)|"
                   r"grabbed you a spot|reservation is set|times? (are |is )?confirmed|meeting is locked in|"
                   r"slot is held|you'?re booked in|you'?ll get a ping\b|"

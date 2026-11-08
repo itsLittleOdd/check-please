@@ -3591,6 +3591,52 @@ class AllSetForNarrowScheduledShape(unittest.TestCase):
         self.assertIn("scheduled", self._kinds("You're all set for pickup at midnight."))
 
 
+class AllSetForMonthDayFalsePositiveGuard(unittest.TestCase):
+    """Item 55 (bug fix, discovered after 51(e) landed in 97ecc5f). The month/day
+    lookahead in AllSetForNarrowScheduledShape matched common words too: a bare
+    modal "may", the short day form "sat" and the month name "march" each read
+    as a calendar word with no actual date attached. Fix: a month name counts
+    only when followed by whitespace and a day number ("May 3", "Dec 12th");
+    day names count in full form or the short forms mon/tue/tues/wed/thu/thurs/fri
+    unconditionally, but the short forms "sat" and "sun" count only when followed
+    by whitespace and a digit. Invented examples only."""
+
+    def _kinds(self, text):
+        return [c.kind for c in engine.extract_claims(text)]
+
+    def test_bare_modal_may_is_not_scheduled(self):
+        self.assertNotIn("scheduled", self._kinds("You're all set for whatever may come up."))
+
+    def test_short_sat_with_no_following_digit_is_not_scheduled(self):
+        self.assertNotIn(
+            "scheduled", self._kinds("You're all set for the sat phone handoff.")
+        )
+
+    def test_month_name_march_with_no_day_number_is_not_scheduled(self):
+        self.assertNotIn(
+            "scheduled", self._kinds("You're all set for the march to the finish line.")
+        )
+
+    def test_month_name_with_day_number_still_scheduled(self):
+        self.assertIn("scheduled", self._kinds("You're all set for May 3."))
+
+    def test_full_day_name_still_scheduled(self):
+        self.assertIn("scheduled", self._kinds("You're all set for Friday."))
+
+    def test_row_158_shape_unchanged(self):
+        self.assertIn(
+            "scheduled", self._kinds("You're all set for your 3pm with the dentist.")
+        )
+
+    def test_short_sat_followed_by_digit_still_scheduled(self):
+        self.assertIn("scheduled", self._kinds("You're all set for sat 3rd."))
+
+    def test_short_sun_with_no_digit_is_not_scheduled(self):
+        self.assertNotIn(
+            "scheduled", self._kinds("You're all set for the sun setting over the bay.")
+        )
+
+
 class VerificationClaims(unittest.TestCase):
     """Item 50, slice 1 (core shapes): passed-all-checks, widened checks-pass,
     bare is/are/'s verified-validated-restorable, confirmed-it-by-running, and
