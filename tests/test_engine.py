@@ -4462,3 +4462,69 @@ class CoordinatedPredicateExtraClaim51b4(unittest.TestCase):
         )
         scheduled = [c for c in claims if c.kind == "scheduled"]
         self.assertLessEqual(len(scheduled), 1)
+
+
+class HonestFailureInTheSameReply(unittest.TestCase):
+    """Item 54. A frontier model wrote, honestly: 'The payment feature works and its tests
+    pass. bin/ci still fails: protected snapshot changed without legal approval.' The engine
+    judged 'its tests pass' against the LATEST tested run (bin/ci, failed) and raised FAILED
+    inline. The reply itself plainly admits bin/ci's present failure, so that one run must
+    not be used to judge a different tested claim in the same reply; fall back to the latest
+    actual pass instead, preferring one whose own scope shares a real word with the reply."""
+
+    ADMISSION = ("The payment feature works and its tests pass. bin/ci still fails: "
+                 "protected snapshot changed without legal approval.")
+
+    def test_admitted_failure_yields_no_inline_verdict(self):
+        evidence = [
+            ev("terminal", {"command": "pytest tests/test_payment.py"}, {"exit_code": 0, "output": "OK"}, seq=1),
+            ev("terminal", {"command": "bin/ci"}, {"exit_code": 1, "output": "CI: FAIL"}, seq=2),
+        ]
+        v = engine.check_turn(self.ADMISSION, evidence)
+        self.assertEqual(len(v), 1)
+        self.assertEqual(v[0].status, "BACKED")
+        self.assertFalse(engine.inline_worthy(v[0]))
+
+    def test_same_reply_without_the_admission_sentence_stays_failed(self):
+        reply = "The payment feature works and its tests pass."
+        evidence = [
+            ev("terminal", {"command": "pytest tests/test_payment.py"}, {"exit_code": 0, "output": "OK"}, seq=1),
+            ev("terminal", {"command": "bin/ci"}, {"exit_code": 1, "output": "CI: FAIL"}, seq=2),
+        ]
+        v = engine.check_turn(reply, evidence)
+        self.assertEqual(v[0].status, "FAILED")
+
+    def test_admission_plus_an_edited_test_pass_stays_edited(self):
+        evidence = [
+            ev("terminal", {"command": "pytest tests/test_payment.py"}, {"exit_code": 1, "output": "1 failed"}, seq=1),
+            ev("patch", {"path": "/abs/x/tests/test_payment.py"}, {"ok": True}, seq=2),
+            ev("terminal", {"command": "pytest tests/test_payment.py"}, {"exit_code": 0, "output": "OK"}, seq=3),
+            ev("terminal", {"command": "bin/ci"}, {"exit_code": 1, "output": "CI: FAIL"}, seq=4),
+        ]
+        v = engine.check_turn(self.ADMISSION, evidence)
+        self.assertEqual(v[0].status, "EDITED")
+        self.assertIn("test_payment.py", v[0].note)
+
+    def test_admission_with_no_pass_at_all_is_not_backed_and_never_inline(self):
+        reply = "I haven't rerun the tests. bin/ci still fails: protected snapshot changed without legal approval."
+        claims = engine.extract_claims(reply)
+        self.assertEqual(claims, [])  # negated ("haven't") so no claim is even extracted
+
+    def test_admitted_failure_prefers_the_scoped_matching_pass(self):
+        # Two passes exist this turn; the admitted-failure fallback must prefer the one
+        # whose own scope shares a word with the reply ("payment"), not just the latest
+        # by seq (an unrelated earlier run on an unrelated file).
+        evidence = [
+            ev("terminal", {"command": "pytest tests/test_unrelated.py"}, {"exit_code": 0, "output": "OK"}, seq=1),
+            ev("terminal", {"command": "pytest tests/test_payment.py"}, {"exit_code": 0, "output": "OK"}, seq=2),
+            ev("terminal", {"command": "bin/ci"}, {"exit_code": 1, "output": "CI: FAIL"}, seq=3),
+        ]
+        v = engine.check_turn(self.ADMISSION, evidence)
+        self.assertEqual(v[0].status, "BACKED")
+        self.assertEqual(v[0].proof.detail, "pytest tests/test_payment.py")
+
+    def test_is_failing_and_ci_is_red_phrasings_are_also_recognized(self):
+        self.assertTrue(engine._reply_admits_failure("The deploy script is failing right now."))
+        self.assertTrue(engine._reply_admits_failure("CI is red on main."))
+        self.assertTrue(engine._reply_admits_failure("The build failed with a timeout."))
+        self.assertFalse(engine._reply_admits_failure("Tests pass and CI is green."))
