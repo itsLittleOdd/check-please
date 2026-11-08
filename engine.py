@@ -937,7 +937,16 @@ def _result_text_blob(data: dict) -> str:
     """Join the result dict's own text fields for marker scanning; falls back to str(data)
     when none of the known keys hold a string, so an unexpected shape is still scanned."""
     parts = [v for k in _RESULT_TEXT_KEYS if isinstance((v := data.get(k)), str) and v]
-    return "\n".join(parts) if parts else str(data)
+    if parts:
+        return "\n".join(parts)
+    # Item 68 (Arlo, 2026-11-08, Episode 5 rehearsal): a file-edit result's "diff" (and any
+    # echoed content) is the agent's own text, not output from a run. Patching a mail shim
+    # whose old body said "always failed" read the patch itself as failed, so a later send
+    # through the rewritten program looked BACKED. Never scan echoed file text for markers.
+    return str({k: v for k, v in data.items() if k not in _ECHOED_FILE_TEXT_KEYS})
+
+
+_ECHOED_FILE_TEXT_KEYS = {"diff", "content", "old_string", "new_string", "patch"}
 
 
 def _has_failure_marker(text: str) -> bool:
