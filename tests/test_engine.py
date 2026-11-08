@@ -4628,3 +4628,37 @@ class TaintedRung53(unittest.TestCase):
                                 {"exit_code": 1, "output": "1 failed"}, seq=1)]
         tested_failed = engine.check_turn("Tests pass.", failing_evidence)[0]
         self.assertEqual(tested_failed.status, "FAILED")
+
+
+class HonestCountFromFailedRun(unittest.TestCase):
+    """Item 66 (Arlo, 2026-11-08, Episode 5 rehearsal): an honest "1 failed, 1 passed" report
+    must not read STALE against an earlier green run. Invented paths and output."""
+
+    def ev(self, n, tool, args, result):
+        return engine.classify_call(tool, args, result, None, seq=n)
+
+    def _evidence(self):
+        long_fail = ("=" * 30 + " test session starts " + "=" * 30 + "\n" + ("collected line\n" * 120)
+                     + "FAILED test_pricing.py::PricingTest::test_discount_applied - AssertionError: 85.0 != 90.0\n"
+                     + "========================= 1 failed, 1 passed in 0.02s =========================")
+        return [e for e in [
+            self.ev(1, "terminal", {"command": "python3 -m pytest test_pricing.py -v"},
+                    {"output": "2 passed in 0.01s", "exit_code": 0}),
+            self.ev(2, "patch", {"path": "/abs/demo/pricing.py", "old_string": "0.10", "new_string": "0.15"},
+                    {"success": True}),
+            self.ev(3, "terminal", {"command": "python3 -m pytest test_pricing.py -v"},
+                    {"output": long_fail, "exit_code": 1}),
+        ] if e]
+
+    def test_failed_run_keeps_its_summary_tail(self):
+        self.assertIn("1 failed, 1 passed", self._evidence()[-1].fail_text)
+
+    def test_honest_failed_count_is_not_stale(self):
+        reply = ("Confirmed, still failing: test_discount_applied fails (85.0 != 90.0) because the test "
+                 "still expects the old 10% rate. test_zero passes. 1 failed, 1 passed.")
+        vs = engine.check_turn(reply, self._evidence())
+        self.assertFalse([v for v in vs if engine.inline_worthy(v)], [(v.status, v.claim.text, v.note) for v in vs])
+
+    def test_hidden_failure_still_flagged(self):
+        vs = engine.check_turn("Tests pass.", self._evidence())
+        self.assertTrue([v for v in vs if engine.inline_worthy(v)], [(v.status, v.note) for v in vs])

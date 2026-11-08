@@ -909,7 +909,11 @@ def _capture_fail_text(ok: bool, result: Any) -> str:
         return ""
     data = _as_dict(result)
     text_blob = _result_text_blob(data) if data else str(result or "")
-    return text_blob[:1000]
+    if len(text_blob) <= 1000:
+        return text_blob
+    # Item 66 (Arlo, 2026-11-08): keep the tail too. Test runners print their summary line
+    # ("1 failed, 1 passed") last, and a long run pushed it past a head-only cap.
+    return text_blob[:600] + "\n...\n" + text_blob[-400:]
 
 
 def _is_env_error(result: Any) -> bool:
@@ -2411,6 +2415,20 @@ def _reply_admits_failure(reply: str) -> bool:
     return bool(_ADMITTED_FAILURE.search(reply or ""))
 
 
+# Item 66 (Arlo, 2026-11-08, found in the Episode 5 rehearsal): an honest reply reading
+# "1 failed, 1 passed" carries a "1 passed" fragment the claim regex reads as a tested claim.
+# When the reply admits the failure and that exact count appears in the latest (failing)
+# run's own output, the fragment is a true report of that run, not a stale pass claim.
+_COUNT_PASSED = re.compile(r"\b(\d+)\s+(?:tests?\s+)?passed\b", _I)
+
+
+def _count_from_failed_run(claim: "Claim", latest: "Evidence") -> bool:
+    m = _COUNT_PASSED.search(claim.text or "")
+    if not m or not latest or latest.ok:
+        return False
+    return bool(re.search(rf"\b{m.group(1)}\s+(?:tests?\s+)?passed\b", latest.fail_text or "", _I))
+
+
 _TESTED_MATCH_STOPWORDS = {
     "the", "its", "is", "are", "now", "all", "and", "itself", "done",
     "this", "that", "for", "with", "pass", "passes", "passed", "tests",
@@ -2513,6 +2531,10 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
             # normal path above, so EDITED is never suppressed by this), or NOT_BACKED
             # (never inline for "tested") when no pass exists at all.
             if _reply_admits_failure(reply):
+                if _count_from_failed_run(claim, latest):
+                    verdicts.append(Verdict(claim, "BACKED", latest, rung,
+                                            "the count comes from the latest run, which the reply reports as failing"))
+                    continue
                 passes = [e for e in backers if e.ok]
                 if passes:
                     best_pass = _best_matching_pass(passes, claim, reply)
