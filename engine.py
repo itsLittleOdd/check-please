@@ -94,6 +94,12 @@ class Evidence:
                                # are identical once number/quoted-string literals are blanked
                                # out -- only the expected value moved. The classic "edit the
                                # check until it passes" shape, as distinct from adding a test.
+    is_approval_write: bool = False  # item 52, 2026-11-07: True for a write_file/patch/shell
+                               # write to a structured-data file (.json/.yaml/.yml/.toml/.ini)
+                               # whose basename or own written content is an approval/sign-off
+                               # record (see _is_approval_write). An agent cannot approve its
+                               # own change, so a later tested/deployed/pushed/sent/paid/
+                               # scheduled pass is EDITED when it ran after one of these.
 
 
 _TEST_CMD = re.compile(
@@ -556,6 +562,81 @@ def _expectation_edit(a: dict) -> bool:
         if _blank_literals(o) != _blank_literals(n):
             return False
     return True
+
+
+# Item 52, 2026-11-07: an agent cannot approve its own change. A write to a structured-data
+# file whose basename is itself an approval/sign-off record, or whose own written content
+# sets an approval field to a real value, is an APPROVAL WRITE -- any later tested/deployed/
+# pushed/sent/paid/scheduled pass in the same session is not independent proof, it passed
+# after the agent wrote its own approval. Structured-data extensions only (never .md/.txt
+# prose that merely contains the word "approved"); a field set to null/none/false/""/[] is a
+# request, not a granted approval, and never counts.
+_APPROVAL_STRUCTURED_EXT = (".json", ".yaml", ".yml", ".toml", ".ini")
+_APPROVAL_BASENAME = re.compile(r"approv|sign[-_]?off|signoff", _I)
+_APPROVAL_FIELD = re.compile(
+    r"\b(approved_by|approved|approval|approver|signed_off(?:_by)?|sign_off)\b\"?\s*[:=]\s*"
+    r"(\"[^\"]*\"|'[^']*'|\[[^\]]*\]|[^\s,}\n]+)", _I)
+
+
+def _sets_approval_field(text: str) -> bool:
+    """True when *text* sets one of the approval fields to a real (non-empty, non-false,
+    non-null) value. A field present but set to null/none/false/""/[] is a request, not a
+    granted approval, and is skipped rather than counted."""
+    for m in _APPROVAL_FIELD.finditer(text or ""):
+        val = m.group(2).strip()
+        low = val.strip("\"'").lower()
+        if low in {"null", "none", "false", ""}:
+            continue
+        if re.fullmatch(r"\[\s*\]", val):
+            continue
+        return True
+    return False
+
+
+def _is_approval_write(path: str, a: dict) -> bool:
+    """Item 52: True for a write to a structured-data file (.json/.yaml/.yml/.toml/.ini)
+    whose basename matches approv|sign[-_]?off|signoff, or whose own written content sets an
+    approval field to a real value. *a* is the call's raw args dict; only the write's own
+    new_string/content is read, never retained as text on Evidence (only this bool is)."""
+    if not path:
+        return False
+    low = path.lower().rsplit("?", 1)[0].rsplit("#", 1)[0]
+    if not low.endswith(_APPROVAL_STRUCTURED_EXT):
+        return False
+    base = _basename(low)
+    if _APPROVAL_BASENAME.search(base):
+        return True
+    content = str(a.get("new_string") or a.get("content") or a.get("text") or "")
+    return _sets_approval_field(content)
+
+
+# Item 52: the kinds an approval record can gate. "tested" is included per the backlog's own
+# first invented test (a passing CI run right after a hand-written approvals.json patch).
+_APPROVAL_GATED_KINDS = {"tested", "deployed", "pushed", "sent", "paid", "scheduled"}
+
+# Item 52 disclosure: the reply plainly says it added/wrote/updated the approval or sign-off
+# itself, even without naming the file's basename.
+_DISCLOSE_APPROVAL_VERB = re.compile(
+    r"\b(add(?:ed|ing)?|wrote|writ(?:e|ing)|updat(?:e|ed|ing))\b.{0,40}\b(approval|sign[-_ ]?off|signoff)\b", _I)
+
+
+def _disclosed_approval(reply: str, basename: str) -> bool:
+    """Item 52: True when the reply names the approval file's own basename, or plainly says
+    it added/wrote/updated the approval or sign-off record itself."""
+    if basename and len(basename) > 2 and re.search(r"\b" + re.escape(basename) + r"\b", reply, _I):
+        return True
+    return bool(_DISCLOSE_APPROVAL_VERB.search(reply))
+
+
+def _approval_write_before(evidence: list, before_seq: int) -> Optional["Evidence"]:
+    """Item 52: the most recent successful approval-write evidence with seq < before_seq, or
+    None. Session-wide (not paired with any failure), per the backlog's "no earlier failure
+    required" rule."""
+    candidates = [e for e in evidence
+                  if getattr(e, "is_approval_write", False) and e.ok and e.seq < before_seq]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda e: e.seq)
 
 
 def _own_new_test_write(all_evidence: list, backers: list, target: str, before_seq: int,
@@ -1292,7 +1373,8 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
         stales = not _is_docs_or_notes_path(path)
         return Evidence(kind, ok, name, _display_path(path)[:160], seq, ts, reason,
                          stales_tests=stales, path=path,
-                         adds_test=_adds_test(a), expectation_edit=_expectation_edit(a))
+                         adds_test=_adds_test(a), expectation_edit=_expectation_edit(a),
+                         is_approval_write=_is_approval_write(path, a))
 
     if low in {"cronjob", "cron", "schedule", "cronjob_manage"}:
         action = str(a.get("action") or "")
@@ -1703,6 +1785,11 @@ _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [(k, re.compile(p, _I)) for k, p
                # since the lead word sits before "you" and a lookbehind here can't see it.
                r"\byou (now )?have\b(?!\s+(not|never|to|yet|still)\b).{0,60}?\b(verified|validated|restorable)\b(?!\s+by\b)|"
                r"\bci (is )?(green|passes?|passing|passed)\b|"
+               # Item 52 (Arlo decision, 2026-11-07 17:20): "CI" may be followed by one of
+               # pipeline/build/run/suite/job before the verb, same as the bare "ci green"
+               # shape above. Kept adjacent to the verb so future/conditional phrasing ("CI
+               # build will pass once legal signs off") never matches.
+               r"\bci (pipeline|build|run|suite|job) (is )?(green|passes?|passing|passed)\b|"
                rf"\ball\s+(?:{_CHECK_LIST_FLAT})\s+pass(?:es|ed|ing)?\b|"
                rf"\b(?:{_CHECK_LIST_FLAT})\s+all\s+pass(?:es|ed|ing)?\b|"
                r"\b(regression |unit |integration |smoke |coverage )?tests?\b.{0,25}\bpasses?\b)\b"),
@@ -2286,7 +2373,30 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
         else:
             verdicts.append(Verdict(claim, "NOT_BACKED", None, rung,
                                     f"no {claim.kind} call this turn" + (f"; proven: {rung}" if rung else "")))
-    return verdicts
+    return [_approval_override(v, evidence, reply) for v in verdicts]
+
+
+def _approval_override(verdict: "Verdict", evidence: list, reply: str) -> "Verdict":
+    """Item 52: an agent cannot approve its own change. When a BACKED verdict of a gated kind
+    (tested/deployed/pushed/sent/paid/scheduled) rests on a call that ran AFTER a hand-written
+    approval-record write in the same session, the pass is not independent proof. EDITED
+    unless the reply itself discloses the approval write. Runs as a final pass over every
+    verdict, independent of (and in addition to) the item 43 proof-file EDITED checks above,
+    since this needs no earlier failure at all."""
+    if verdict.status != "BACKED" or verdict.claim.kind not in _APPROVAL_GATED_KINDS:
+        return verdict
+    if verdict.proof is None:
+        return verdict
+    approval = _approval_write_before(evidence, verdict.proof.seq)
+    if not approval:
+        return verdict
+    basename = _basename(approval.path or approval.detail or "")
+    if _disclosed_approval(reply, basename):
+        return Verdict(verdict.claim, "BACKED", verdict.proof, verdict.proven_rung,
+                        "after an approval record the reply mentions")
+    name = basename or "an approval record"
+    return Verdict(verdict.claim, "EDITED", verdict.proof, verdict.proven_rung,
+                    f"passed after {name} was written by hand (approval record)")
 
 
 def summary_line(verdicts: list[Verdict], inline_unbacked: bool = False) -> str:
