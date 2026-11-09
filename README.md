@@ -80,8 +80,10 @@ drafted, saved, tested, committed, pushed, deployed, scheduled, sent, paid
 ## Install
 
 ```
-hermes plugins install check-please
+hermes plugins install itsLittleOdd/check-please --enable
 ```
+
+`--enable` turns it on in the same step; without it, Hermes installs the plugin but leaves it off until you run `hermes plugins enable check-please`. Hermes warns that the source is not from its catalog until the catalog listing is merged. New sessions pick the plugin up; restart an open chat (or the gateway) to load it there.
 
 ## Settings
 
