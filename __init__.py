@@ -603,6 +603,24 @@ def on_pre_verify(session_id: Any = None, coding: bool = False, attempt: int = 0
         return None
 
 
+def _asking_session(session_id: Any) -> str:
+    """The session whose receipts /check may show: the asking session, and only that one.
+
+    Fable 5.2 review: this used to fall back to the most recent session in the process
+    whenever the asking session had no verdicts (`_LAST.get(sid) or
+    _LAST.get(_LAST_SESSION[0])`). A gateway serves many chats from one process, so a user
+    whose last reply made no claims, or whose chat had no session yet, was shown another
+    chat's claim sentences and proof commands. A surface that passes no session id at all
+    (the legacy `fn(raw_args)` call) still gets the last session, but only while this process
+    has seen exactly one session, where there is nobody else's data to show."""
+    sid = _session(session_id)
+    if sid:
+        return sid
+    with _LOCK:
+        known = set(_LAST) | set(_LEDGER)
+    return _LAST_SESSION[0] if len(known) <= 1 else ""
+
+
 def handle_check(raw_args: str = "", session_id: Any = None, **kwargs: Any) -> str:
     try:
         arg = (raw_args or "").strip().split()[0].lower() if (raw_args or "").strip() else ""
@@ -615,14 +633,13 @@ def handle_check(raw_args: str = "", session_id: Any = None, **kwargs: Any) -> s
             with _LOCK:
                 tally = _load_cron_tally()
             return engine.jobs_report(tally)
+        sid = _asking_session(session_id)
         if arg == "subagents":
             with _LOCK:
                 log = _load_subagent_log()
-            sid = _session(session_id) or _LAST_SESSION[0]
-            return engine.subagents_report(log.get(sid, []))
-        sid = _session(session_id) or _LAST_SESSION[0]
+            return engine.subagents_report(log.get(sid, []) if sid else [])
         with _LOCK:
-            verdicts = _LAST.get(sid) or _LAST.get(_LAST_SESSION[0]) or []
+            verdicts = list(_LAST.get(sid) or []) if sid else []
         return engine.detail_report(verdicts)
     except Exception as exc:
         return f"Check, Please could not build the report: {exc}"
