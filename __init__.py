@@ -3,7 +3,9 @@
 Hooks (all observe-only except the cosmetic reply transform):
   pre_llm_call          -> start a fresh evidence ledger for this session's turn
   post_tool_call        -> record what each tool call proves (engine.classify_call)
+  subagent_stop         -> record what a delegated child's own tool calls prove
   transform_llm_output  -> append one "Check:" line under replies that make completion claims
+  pre_verify            -> on coding turns, send a stale or failed draft claim back once
 Slash command:
   /check                -> full per-claim detail for the last checked reply
   /check today          -> counts plus every non-backed claim logged today
@@ -21,7 +23,7 @@ from typing import Any, Optional
 
 from . import engine
 
-__version__ = "0.1.0"
+__version__ = "0.4.1"   # keep in step with plugin.yaml
 logger = logging.getLogger("check_please")
 
 _LOCK = threading.Lock()

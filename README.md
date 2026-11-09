@@ -73,6 +73,8 @@ drafted, saved, tested, committed, pushed, deployed, scheduled, sent, paid
 - **BACKED**: a matching tool call ran this turn and succeeded.
 - **STALE**: tests passed, then code changed and nothing re-ran them.
 - **FAILED**: the matching call ran but errored, bounced or was blocked.
+- **EDITED** (shown as "proof edited"): the matching call passed only after the agent changed the thing it was being checked by (the test, the script, a hook, an approval record), or the call ran through a program the agent rewrote this session.
+- **PARTIAL** (shown as "partial run"): a whole-suite claim backed only by a narrowed run after an earlier failure.
 - **NOT BACKED**: no matching call this turn.
 
 ## Install
@@ -115,9 +117,15 @@ Both only fire on stale or failed claims (an active contradiction), never a plai
 
 ## What it touches
 
-- Hooks: `post_tool_call` (observe only); `pre_llm_call` (observe, plus an optional one-line context nudge, see "Catch before send"); `transform_llm_output` (appends one line; streaming stays on); `pre_verify` (observe, plus an optional continue directive, see "Catch before send").
+- Hooks: `post_tool_call` (observe only); `subagent_stop` (observe only: a delegated child's tool-call metadata and summary); `pre_llm_call` (observe, plus an optional one-line context nudge, see "Catch before send"); `transform_llm_output` (appends one line; streaming stays on); `pre_verify` (observe, plus an optional continue directive, see "Catch before send").
 - No network calls, no model calls, no shell commands, no credentials, no background processes, no telemetry.
-- Keeps the current turn's tool evidence in memory only.
+- What it stores. The current turn's full evidence ledger lives in memory only. A smaller record is written to this plugin's own state file, `state.json` in its folder under `plugin-data/` in your Hermes home (the folder name starts with `agent-plugin-check-please`; local, owner-readable only), so `/check`, the Desktop pane, the cross-turn checks and the cron tally survive a restart:
+  - per session, the newest successful call of each kind: tool name plus the first line of the command (up to 150 characters) or the file path;
+  - per session, the last reply's claims: each claim sentence (up to 200 characters), its verdict, note and proof line;
+  - per session, the turn counter, the last passing test command, and any claim kind still flagged;
+  - per day, for 14 days: claim counts and up to 30 non-backed claim sentences (80 characters each);
+  - per cron job: claim counts; per parent session: delegated children's claim verdicts.
+  Capped at 200 sessions. A command line that carries a secret on its first line would be stored and shown as written; nothing here redacts it.
 - Never blocks, approves or edits a tool call.
 
 ## Develop
