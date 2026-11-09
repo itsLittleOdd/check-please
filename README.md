@@ -60,7 +60,7 @@ _Not yet captured. Placeholders for the catalog listing:_
 
 ## Why a plugin and not a prompt
 
-A prompt asks the model that made the claim to grade its own homework. Check, Please reads the tool log through Hermes hooks, outside the model, and the match is plain code. No second model, no extra tokens, no network.
+A prompt asks the model that made the claim to grade its own homework. Check, Please reads the tool log through Hermes hooks, outside the model, and the match is plain code. No second model, no network, and the check itself makes no model calls. The cost is in the two optional nudges: on a coding turn, catch-before-send may send the agent back once to recheck before it replies, and a one-line note can be added to the next turn's context (see "Catch before send").
 
 ## The state ladder
 
