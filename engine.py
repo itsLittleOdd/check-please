@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Optional
 
 LADDER = ["drafted", "saved", "saved_code", "tested", "committed", "pushed", "deployed",
@@ -101,6 +101,11 @@ class Evidence:
                                # recognize a reply that names the new value in plain words
                                # (\"raised MAX_RETRIES to 5\") even without the words expected/
                                # assertion/expectation.
+    also_kinds: tuple = ()     # Fable 5.2 review: the OTHER ladder kinds a successful `a && b`
+                               # chain proves. `&&` only reaches the next stage when the one
+                               # before it exited 0, so a chain that succeeded ran every stage
+                               # to success; classify_call still returns one Evidence (the
+                               # highest-stakes kind), and check_turn reads these as well.
     is_approval_write: bool = False  # item 52, 2026-11-07: True for a write_file/patch/shell
                                # write to a structured-data file (.json/.yaml/.yml/.toml/.ini)
                                # whose basename or own written content is an approval/sign-off
@@ -1241,13 +1246,21 @@ def _rewritten_program(evidence: list, backing: "Evidence") -> str:
     return ""
 
 
+_COMMIT_REFUSED = re.compile(
+    r"pre-commit hook|commit-msg hook|\bhusky\b|lint-staged|aborting commit|gpg failed to sign|"
+    r"please tell me who you are|empty commit message", _I)
+
+
 def _first_stage_failed(cmd: str, kind: str, result: Any) -> bool:
     """Item 43 (Arlo, 2026-11-07): in a failed `a && b` chain, `&&` stops at the first failing
     stage, so the earliest matched stage did not necessarily succeed. Evidence that it failed:
     its own program printed an error line starting with "<program>:" (for example
     "crontab: Operation not permitted"), or, for a git commit stage, git saying there was
     nothing to commit."""
-    out = str(result or "")
+    # The decoded output text, not the raw JSON string: in the raw string a line break is the
+    # two characters backslash-n, so "^" / "\n" / "\b" never saw the start of a later line.
+    data = _as_dict(result)
+    out = _result_text_blob(data) if data else str(result or "")
     stage = next((part for part in cmd.split("&&") if _stage_kind(part) == kind), "")
     words = [w for w in stage.strip().split() if "=" not in w.split("/")[0] and w not in ("sudo", "env")]
     prog = words[0].rsplit("/", 1)[-1] if words else ""
@@ -1255,7 +1268,57 @@ def _first_stage_failed(cmd: str, kind: str, result: Any) -> bool:
         return True
     if kind == "committed" and re.search(r"nothing to commit|no changes added to commit", out):
         return True
+    # Fable 5.2 review: `git commit && git push` can also fail AT the commit when a hook or git
+    # itself refuses it. Closed list of git's and the common hook runners' own refusal lines.
+    if kind == "committed" and _COMMIT_REFUSED.search(out):
+        return True
+    # Fable 5.2 review: `pytest && git push` that fails AT pytest prints a test failure, not a
+    # "pytest:" line, so the test stage was credited as a pass and "Tests pass" read BACKED.
+    # When the test stage is followed only by stages of other kinds, a test-failure marker in
+    # the output can only be its own (the later stages never ran). A same-kind chain
+    # (`pytest a && pytest b`) keeps item 49's measured behavior and is not touched here.
+    if kind == "tested":
+        kinds = [k for k in (_stage_kind(part) for part in cmd.split("&&")) if k]
+        if kinds.count("tested") == 1 and (
+                _FAILURE_COUNT.search(out) or _FAILURE_EQ.search(out)
+                or _ZERO_PASSED.search(out) or _BARE_FAILED_MARKER.search(out)):
+            return True
     return False
+
+
+def _chain_also_kinds(cmd: str, primary: Optional[str]) -> tuple:
+    """Every other ladder kind a SUCCESSFUL multi-stage command proves, in stage order.
+
+    A pure `a && b && c` chain that exited 0 ran every stage to success, so every stage's kind
+    is proven. Once a `;` or a line break joins the stages, an earlier stage can fail and the
+    command still exit 0; there only a TEST stage is credited, on the same footing a lone
+    `cd app; pytest; echo done` already has today: a failing test run prints a failure count,
+    which call_succeeded() treats as a failed call whatever the exit code. With `||` a stage
+    may never have run, so nothing extra is credited. Separators inside quotes (a commit
+    message, a -c script) are not separators."""
+    bare = _QUOTED_SPAN.sub("''", cmd or "")
+    if "||" in bare or not re.search(r"&&|;|\n", bare.strip()):
+        return ()
+    loose = bool(re.search(r";|\n", bare.strip()))
+    kinds = []
+    for part in re.split(r"&&|;|\n", bare):
+        k = _stage_kind(part)
+        if k and k != primary and (k == "tested" or not loose):
+            kinds.append(k)
+    return tuple(dict.fromkeys(kinds))
+
+
+def _expand_chain_evidence(evidence: list) -> list:
+    """One Evidence per proven kind: a chain's also_kinds become same-seq copies, so every
+    check below (latest run, stale, proof edited, target match) sees them as ordinary evidence."""
+    if not any(getattr(e, "also_kinds", ()) for e in evidence):
+        return evidence
+    out = []
+    for e in evidence:
+        out.append(e)
+        for k in getattr(e, "also_kinds", ()) or ():
+            out.append(replace(e, kind=k, also_kinds=()))
+    return out
 
 
 def _semicolon_kind_is_ambiguous(cmd: str, kind: Optional[str]) -> bool:
@@ -1528,7 +1591,7 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
             if earliest:
                 if _first_stage_failed(cmd, earliest, result):
                     return Evidence(earliest, False, name, short, seq, ts, reason or "the first step failed",
-                                    cmd=cmd[:2000])
+                                    cmd=cmd[:2000], fail_text=_capture_fail_text(False, result))
                 return Evidence(earliest, True, name, short, seq, ts, cmd=cmd[:2000])
         if not ok and ";" in cmd and "&&" not in cmd and _semicolon_kind_is_ambiguous(cmd, kind):
             return None
@@ -1537,10 +1600,11 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
         if not ok and "|" in cmd and "&&" not in cmd and ";" not in cmd and "||" not in cmd \
                 and _single_pipe_kind_is_ambiguous(cmd, kind):
             return None
-        narrow = _targeted_test_scope(cmd) if kind == "tested" else ""
+        also = _chain_also_kinds(cmd, kind) if (ok and kind) else ()
+        narrow = _targeted_test_scope(cmd) if (kind == "tested" or "tested" in also) else ""
         return Evidence(kind, ok, name, short, seq, ts, reason, env_error=env_error,
                          narrow_scope=narrow, cmd=cmd[:2000],
-                         fail_text=_capture_fail_text(ok, result)) if kind else None
+                         fail_text=_capture_fail_text(ok, result), also_kinds=also) if kind else None
 
     if low in _CODE_TEXT_TOOLS:
         # execute_code runs Python directly; browser_exec runs Python against browser helpers.
@@ -2660,6 +2724,7 @@ def _tested_pass_verdict(claim: "Claim", pass_ev: "Evidence", evidence: list,
 
 def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
     verdicts: list[Verdict] = []
+    evidence = _expand_chain_evidence(evidence)
     for claim in extract_claims(reply):
         rung = _highest_rung(evidence, _family_kinds(claim.kind))
         backers = [e for e in evidence if e.kind in _BACKS.get(claim.kind, set())]
@@ -2922,6 +2987,7 @@ def apply_session_evidence(verdicts: list[Verdict], session_evidence: list[Evide
     turns, so a claim naming a different target than the earlier evidence proved can still read
     as falsely BACKED here (item 39, target matching, is the fix for that gap, not this one)."""
     out: list[Verdict] = []
+    session_evidence = _expand_chain_evidence(session_evidence)
     for v in verdicts:
         if v.status != "NOT_BACKED":
             out.append(v)

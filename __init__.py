@@ -219,13 +219,17 @@ def _reset_turn(sid: str, turn: Any = None) -> None:
 
 
 def _evidence_to_dict(ev: Any) -> dict:
-    return {"kind": ev.kind, "ok": ev.ok, "tool": ev.tool, "detail": ev.detail, "seq": ev.seq, "ts": ev.ts}
+    row = {"kind": ev.kind, "ok": ev.ok, "tool": ev.tool, "detail": ev.detail, "seq": ev.seq, "ts": ev.ts}
+    if getattr(ev, "also_kinds", ()):
+        row["also_kinds"] = list(ev.also_kinds)   # a successful `a && b` chain proves each stage
+    return row
 
 
 def _evidence_from_dict(d: dict) -> Any:
     return engine.Evidence(kind=str(d.get("kind", "")), ok=bool(d.get("ok")), tool=str(d.get("tool", "")),
                             detail=str(d.get("detail", "")), seq=int(d.get("seq", 0) or 0),
-                            ts=float(d.get("ts", 0.0) or 0.0))
+                            ts=float(d.get("ts", 0.0) or 0.0),
+                            also_kinds=tuple(str(k) for k in (d.get("also_kinds") or ())))
 
 
 def _load_session_evidence(sid: str) -> list:
@@ -363,7 +367,7 @@ def on_post_tool_call(tool_name: str = "", args: Any = None, result: Any = None,
             # Item 27 family (f): only a successful call is worth remembering across turns;
             # a failed one has nothing to back a later recap with.
             _append_session_evidence(sid, ev)
-        if ev.ok and ev.kind == "tested":
+        if ev.ok and (ev.kind == "tested" or "tested" in getattr(ev, "also_kinds", ())):
             rec = _cross_record(sid)
             rec["last_pass_turn"] = rec["turn_num"]
             rec["edited_after_pass"] = False
