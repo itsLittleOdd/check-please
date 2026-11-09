@@ -76,8 +76,11 @@ class RealHookHarnessTest(unittest.TestCase):
         plugin_dir.mkdir(parents=True)
         for name in ("plugin.yaml", "__init__.py", "engine.py"):
             shutil.copy(REPO_ROOT / name, plugin_dir / name)
+        # Item 71: the shipped default is line=issues. These tests read backed counts in the
+        # line, so they set line=all through the real config path (plugins.entries.<name>.settings).
         (self.home / "config.yaml").write_text(
-            "plugins:\n  enabled:\n    - check-please\n",
+            "plugins:\n  enabled:\n    - check-please\n  entries:\n    check-please:\n"
+            "      settings:\n        line: all\n",
             encoding="utf-8",
         )
         self._old_home = os.environ.get("HERMES_HOME")
@@ -91,6 +94,20 @@ class RealHookHarnessTest(unittest.TestCase):
         else:
             os.environ["HERMES_HOME"] = self._old_home
         shutil.rmtree(self.home, ignore_errors=True)
+
+    def test_default_install_adds_no_line_to_an_honest_reply(self):
+        """Item 71: with no settings at all, a fully backed reply comes back untouched."""
+        (self.home / "config.yaml").write_text(
+            "plugins:\n  enabled:\n    - check-please\n", encoding="utf-8")
+        self.plugins._reset_plugin_managers_for_tests()
+        manager = self.plugins.get_plugin_manager()
+        manager.discover_and_load(force=True)
+        sid = "sess-default-honest"
+        manager.invoke_hook("pre_llm_call", session_id=sid, turn_id="turn-1")
+        manager.invoke_hook("post_tool_call", tool_name="terminal", args={"command": "python3 -m unittest"},
+                            result={"exit_code": 0, "output": "OK"}, status="success", session_id=sid)
+        results = manager.invoke_hook("transform_llm_output", response_text="Done, tests pass.", session_id=sid)
+        self.assertFalse([r for r in results if isinstance(r, str)], results)
 
     def test_check_line_reaches_the_final_response_text(self):
         manager = self.plugins.get_plugin_manager()

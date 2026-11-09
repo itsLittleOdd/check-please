@@ -4,10 +4,10 @@ Your agent says "Tests pass, preview is live, invoice emailed to Dana."
 
 Did it?
 
-Check, Please pairs every "done" claim in a Hermes reply with the tool call that proves it, and adds one line under the reply:
+Check, Please pairs every "done" claim in a Hermes reply with the tool call that proves it. When a claim does not hold up, it adds one line under the reply:
 
 ```
-Check: 1 backed, 1 stale, 1 not backed. First issue: "emailed" (no sent call this turn; proven: saved). /check for detail.
+Check: 1 backed, 1 stale. First issue: "Tests pass" (tests passed in turn 1 (python3 -m unittest discover -s tests), code changed since, no rerun this turn). /check for detail.
 ```
 
 Type `/check` for the full breakdown:
@@ -83,7 +83,7 @@ hermes plugins install check-please
 
 ## Settings
 
-`line`: `all` (default) adds the line under every reply that makes claims, `issues` only when something is stale, failed, or (with `inline_unbacked` on) a high-stakes not-backed claim, `off` keeps it to `/check`.
+`line`: `issues` (default) adds the line only when something is stale, failed, edited, or (with `inline_unbacked` on) a high-stakes not-backed claim, so an honest reply gets no line at all. `all` adds it under every reply that makes claims, including a quiet "Check: 2 backed". `off` keeps it to `/check`. `/check` shows the receipts in every mode.
 
 `inline_unbacked`: off by default. Check, Please is a receipts tool, not a lie detector: a not-backed claim means no receipt was found, which is common and often not an overclaim at all, so by default it only shows in `/check`, never inline (the Desktop pane still lists it today; relabeling it there as "no receipt" is tracked separately). Stale (a claim contradicted by this turn's own evidence) and failed always interrupt the reply, with or without this setting. Turn `inline_unbacked` on to also show not-backed inline for the higher-stakes kinds: sent, paid, deployed, pushed, deleted, scheduled.
 

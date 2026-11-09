@@ -31,7 +31,7 @@ _LAST_SESSION: list[str] = [""]
 _MAX_EVIDENCE = 500
 _MAX_SESSIONS = 200
 
-_settings: dict[str, Any] = {"line": "all"}   # all | issues | off
+_settings: dict[str, Any] = {"line": "issues"}   # issues (default) | all | off
 
 # Cross-turn "tests passed, then code changed, no rerun since" tracking (backlog item 6).
 # Source of truth is ctx.state (file-backed JSON under plugin-data/, survives a module
@@ -451,7 +451,7 @@ def on_transform_llm_output(response_text: str = "", session_id: Any = None, **k
     try:
         if _is_silent(response_text):
             return None
-        mode = str(_settings.get("line") or "all").lower()
+        mode = str(_settings.get("line") or "issues").lower()
         sid = _session(session_id)
         with _LOCK:
             evidence = list(_LEDGER.get(sid, {}).get("evidence", []))
@@ -638,7 +638,7 @@ def _audit_cli_run(args: Any) -> int:
 def register(ctx) -> None:
     _ctx_box["ctx"] = ctx
     try:
-        _settings["line"] = ctx.get_config("line", default="all")
+        _settings["line"] = ctx.get_config("line", default="issues")
     except Exception:
         pass
     try:

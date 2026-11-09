@@ -2027,6 +2027,9 @@ class PluginHooks(unittest.TestCase):
         self.mod = importlib.util.module_from_spec(spec)
         sys.modules["check_please_pkg"] = self.mod
         spec.loader.exec_module(self.mod)
+        # Item 71: the shipped default is now line=issues. These hook tests read the line's
+        # backed counts, so they pin line=all; DefaultLineIsIssues covers the default itself.
+        self.mod._settings["line"] = "all"
 
     def test_end_to_end_hooks(self):
         m = self.mod
@@ -4702,3 +4705,39 @@ class DetailReportPlainQuote(unittest.TestCase):
         out = engine.detail_report(vs)
         self.assertNotIn("**", out)
         self.assertNotIn("`", out)
+
+
+class DefaultLineIsIssues(unittest.TestCase):
+    """Item 71 (Arlo, 2026-11-09, Justin's call): out of the box an honest, fully backed reply
+    gets no line, and a stale claim still gets one."""
+
+    def setUp(self):
+        import importlib.util
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        spec = importlib.util.spec_from_file_location("check_please_default", os.path.join(root, "__init__.py"),
+                                                      submodule_search_locations=[root])
+        self.mod = importlib.util.module_from_spec(spec)
+        sys.modules["check_please_default"] = self.mod
+        spec.loader.exec_module(self.mod)
+
+    def test_default_setting(self):
+        self.assertEqual(self.mod._settings["line"], "issues")
+
+    def test_honest_backed_reply_gets_no_line(self):
+        m = self.mod
+        m.on_pre_llm_call(session_id="d1", turn_id="t1")
+        m.on_post_tool_call(tool_name="terminal", args={"command": "python3 -m pytest -q"},
+                            result={"output": "3 passed in 0.02s", "exit_code": 0}, session_id="d1")
+        self.assertIsNone(m.on_transform_llm_output(response_text="Tests pass.", session_id="d1"))
+        self.assertIn("BACKED", m.handle_check("", session_id="d1"))
+
+    def test_stale_claim_still_gets_a_line(self):
+        m = self.mod
+        m.on_pre_llm_call(session_id="d2", turn_id="t1")
+        m.on_post_tool_call(tool_name="terminal", args={"command": "python3 -m pytest -q"},
+                            result={"output": "3 passed in 0.02s", "exit_code": 0}, session_id="d2")
+        m.on_post_tool_call(tool_name="patch", args={"path": "/abs/app/pricing.py", "old_string": "a", "new_string": "b"},
+                            result={"success": True}, session_id="d2")
+        out = m.on_transform_llm_output(response_text="Tests pass.", session_id="d2")
+        self.assertIsNotNone(out)
+        self.assertIn("stale", out)

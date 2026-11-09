@@ -3,6 +3,15 @@
 All notable changes to Check, Please are logged here. Versions follow the
 project's own pace, not strict semver, while the plugin is pre-catalog.
 
+## 0.4.1 - 2026-11-09
+
+- The check line now defaults to `issues`: an honest reply gets no line, and a
+  stale, failed or edited claim still gets one. `line: all` brings back the quiet
+  "Check: N backed" line under every reply with claims. `/check` is unchanged.
+- Fixed: an honest "1 failed, 1 passed" report no longer reads as a stale pass;
+  a patched file's diff is no longer read as failure output; failed-call reasons
+  read in plain words; `/check` quotes claims without markdown markers.
+
 ## 0.4.0 - 2026-11-08
 
 Receipts, not a lie detector: a new verdict family, catch-before-send, subagents,

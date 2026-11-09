@@ -26,7 +26,8 @@ Tool calls:
 
 Reply text: "Tests pass."
 
-Exact Check line appended to the reply:
+No line by default (`line: issues`, the default since 0.4.1): every claim is backed. With
+`line: all` the reply would end with:
 ```
 Check: 1 backed. /check for detail.
 ```

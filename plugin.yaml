@@ -1,7 +1,7 @@
 name: check-please
 label: Check, Please
 kind: standalone
-version: 0.4.0
+version: 0.4.1
 requires_hermes: ">=0.22.6"
 description: >
   Pairs every "done" claim in your agent's reply (sent, deployed, pushed, tests pass, saved, paid)
@@ -17,10 +17,10 @@ provides_hooks:
 config_schema:
   line:
     type: str
-    choices: [all, issues, off]
-    default: all
+    choices: [issues, all, off]
+    default: issues
     label: Check line
-    description: "all = add a line under every reply with claims; issues = only when something is not backed; off = /check only"
+    description: "issues (default) = add a line only when a claim is stale, failed or edited; all = a line under every reply with claims; off = /check only"
   verify_nudge:
     type: bool
     default: true
