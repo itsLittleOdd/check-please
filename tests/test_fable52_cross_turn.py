@@ -88,8 +88,8 @@ class AskTwice(Base):
         # KNOWN GAP, left open on purpose (see FABLE52-REVIEW.md): the cross-turn record only
         # counts an edit made in a LATER turn than the pass. A pass and an edit in the SAME
         # turn, first claimed one turn later, is still backed "earlier this session". Closing
-        # it measured +0.15 inline alerts per 100 real turns of unknown precision, so it needs
-        # an owner's decision, not a freeze-week patch.
+        # it measured 6 more inline alerts in 3,339 real turns (+0.18 per 100) of unknown
+        # precision, so it needs an owner's decision, not a freeze-week patch.
         s = Session("s-quiet")
         _line, v = s.turn("Changed the rounding as asked.", PASS_THEN_EDIT)
         self.assertEqual(v, [])

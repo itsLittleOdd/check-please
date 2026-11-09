@@ -30,8 +30,10 @@ class OpenBugs(unittest.TestCase):
         is recorded as a successful push/deploy, so "Pushed to main." reads BACKED.
         Left open: the right verdict (FAILED "only a dry run" vs. no evidence) and how a reply
         that honestly says "dry run" should read need a decision and a bench pass."""
-        self.assertNotIn("BACKED", statuses("Pushed to main.",
+        self.assertNotIn("BACKED", statuses("Pushed.",
                                             [term("git push --dry-run origin main", "main -> main", 0, 1)]))
+        self.assertNotIn("BACKED", statuses("Published v1.2.0 to npm.",
+                                            [term("npm publish --dry-run", "+ pkg@1.2.0", 0, 1)]))
 
     @unittest.expectedFailure
     def test_a_passing_run_that_logs_a_traceback_is_not_a_failed_run(self):
