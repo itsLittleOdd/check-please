@@ -6,7 +6,7 @@ NousResearch/hermes-agent under itsLittleOdd, adding one file
 using the text below as the PR body. Arlo opens it only after Justin approves
 this exact text.
 
-Checks at the pinned commit PIN_SHA (Arlo, 2026-11-09 evening):
+Checks at the pinned commit d9c370f09f7ae27b57047f74b235b60ddc7a6024 (Arlo, 2026-11-09 evening):
 - `scripts/validate_plugin_catalog.py` (Hermes origin/main 4f6ebb9afe): OK, 1 file valid.
 - Fresh public clone at the pinned sha, `hermes plugins validate <clone> --install-deps` (Hermes 0.23.0): Validation passed.
 - Clean-home install with no GitHub login: `hermes plugins install itsLittleOdd/check-please --enable` installs, enables, adds no line to an honest "tests pass", flags a stale one.
