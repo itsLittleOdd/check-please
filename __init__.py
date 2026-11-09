@@ -307,7 +307,57 @@ def _cross_record(sid: str) -> dict:
         "last_pass_turn": rec.get("last_pass_turn"),
         "edited_after_pass": bool(rec.get("edited_after_pass", False)),
         "pass_detail": str(rec.get("pass_detail", "")),
+        # Fable 5.2 review. last_fail_turn: the turn of the session's latest failing test run
+        # with no pass since. contradicted: see engine.contradiction_record.
+        "last_fail_turn": rec.get("last_fail_turn"),
+        "contradicted": dict(rec.get("contradicted") or {}),
     }
+
+
+def _track_test_state(sid: str, ev: Any) -> None:
+    """Keep last_fail_turn current as each test run lands (see _cross_record). Writes state
+    only when the value actually changes."""
+    if not (ev.kind == "tested" or "tested" in getattr(ev, "also_kinds", ())):
+        return
+    if not ev.ok and getattr(ev, "env_error", False):
+        return  # the check never ran (missing command or module): neither a pass nor a failure
+    rec = _cross_record(sid)
+    value = None if ev.ok else rec["turn_num"]
+    if rec["last_fail_turn"] != value:
+        rec["last_fail_turn"] = value
+        _save_cross_record(sid, rec)
+
+
+def _judge(sid: str, text: str, evidence: list, rec: dict) -> tuple[list, list]:
+    """The one verdict pipeline both transform_llm_output and pre_verify use. Returns
+    (final verdicts, this turn's own verdicts before anything was carried in from earlier
+    turns). Order matters: this turn's evidence, then what the session already knows about its
+    tests, then contradictions still standing from earlier turns, and only then "earlier this
+    session" backing, so an old call can never clean up a claim the session already flagged."""
+    verdicts = engine.check_turn(text or "", evidence)
+    is_test = lambda e: e.kind == "tested" or "tested" in getattr(e, "also_kinds", ())  # noqa: E731
+    ran_tests = any(is_test(e) for e in evidence)
+    # Cross-turn test state only speaks when this turn ran no test of its own: the note says
+    # "no rerun this turn", and a turn that did run one was already judged on that run.
+    if not ran_tests and rec["edited_after_pass"] and rec["last_pass_turn"] is not None:
+        note = (f"tests passed in turn {rec['last_pass_turn']} ({rec['pass_detail']}), "
+                "code changed since, no rerun this turn")
+        verdicts = engine.apply_cross_turn_stale(verdicts, True, note)
+    own = list(verdicts)
+    verdicts = engine.apply_prior_contradictions(verdicts, rec["contradicted"])
+    session_evidence = _load_session_evidence(sid)
+    failed_since = rec["last_fail_turn"] is not None and not ran_tests
+    if failed_since:
+        # The session's latest test run failed and nothing has passed since: an older pass is
+        # not a receipt for "tests pass" now. No alert is raised for it (the reply may be
+        # about something else); the claim just keeps no receipt, with the reason in /check.
+        session_evidence = [e for e in session_evidence if not is_test(e)]
+    verdicts = engine.apply_session_evidence(verdicts, session_evidence)
+    if failed_since:
+        note = f"the last test run (turn {rec['last_fail_turn']}) failed and nothing has passed since"
+        verdicts = [engine.Verdict(v.claim, "NOT_BACKED", None, v.proven_rung, note)
+                    if v.claim.kind == "tested" and v.status == "NOT_BACKED" else v for v in verdicts]
+    return verdicts, own
 
 
 def _save_cross_record(sid: str, rec: dict) -> None:
@@ -378,6 +428,7 @@ def on_post_tool_call(tool_name: str = "", args: Any = None, result: Any = None,
             if rec["last_pass_turn"] is not None and rec["turn_num"] > rec["last_pass_turn"]:
                 rec["edited_after_pass"] = True
                 _save_cross_record(sid, rec)
+        _track_test_state(sid, ev)
     except Exception:
         logger.debug("check-please post_tool_call failed", exc_info=True)
     return None
@@ -460,17 +511,17 @@ def on_transform_llm_output(response_text: str = "", session_id: Any = None, **k
         with _LOCK:
             evidence = list(_LEDGER.get(sid, {}).get("evidence", []))
             subagent_verdicts = list(_LEDGER.get(sid, {}).get("subagent_verdicts", []))
-        verdicts = engine.check_turn(response_text or "", evidence)
         rec = _cross_record(sid)
-        if rec["edited_after_pass"] and rec["last_pass_turn"] is not None:
-            note = (f"tests passed in turn {rec['last_pass_turn']} ({rec['pass_detail']}), "
-                    "code changed since, no rerun this turn")
-            verdicts = engine.apply_cross_turn_stale(verdicts, True, note)
         # Item 27 family (f): a reply recapping work actually done in an earlier turn of this
         # same session should not read as an overclaim just because this turn's own ledger is
-        # empty. Runs after the cross-turn STALE upgrade above so a known stale "tests pass"
-        # claim is never masked as freshly backed by an old pass.
-        verdicts = engine.apply_session_evidence(verdicts, _load_session_evidence(sid))
+        # empty. _judge runs that after the cross-turn STALE upgrade and after any
+        # contradiction still standing from an earlier turn, so an old call never masks a
+        # claim the session already flagged.
+        verdicts, own = _judge(sid, response_text or "", evidence, rec)
+        contradicted = engine.contradiction_record(own, rec["contradicted"], rec["turn_num"])
+        if contradicted != rec["contradicted"]:
+            rec["contradicted"] = contradicted
+            _save_cross_record(sid, rec)
         run = _current_cron()
         cron_guard_text = ""
         if run is not None and verdicts:
@@ -540,12 +591,7 @@ def on_pre_verify(session_id: Any = None, coding: bool = False, attempt: int = 0
         if bool(_settings.get("catch_before_send", True)):
             with _LOCK:
                 evidence = list(_LEDGER.get(sid, {}).get("evidence", []))
-            verdicts = engine.check_turn(final_response or "", evidence)
-            if rec["edited_after_pass"] and rec["last_pass_turn"] is not None:
-                note = (f"tests passed in turn {rec['last_pass_turn']} ({rec['pass_detail']}), "
-                        "code changed since, no rerun this turn")
-                verdicts = engine.apply_cross_turn_stale(verdicts, True, note)
-            verdicts = engine.apply_session_evidence(verdicts, _load_session_evidence(sid))
+            verdicts, _own = _judge(sid, final_response or "", evidence, rec)
             directive = engine.catch_before_send_directive(verdicts)
             if directive is not None:
                 return directive

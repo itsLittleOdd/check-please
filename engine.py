@@ -2975,6 +2975,47 @@ def apply_cross_turn_stale(verdicts: list[Verdict], edited_since_pass: bool, not
     return out
 
 
+_CONTRADICTED = {"STALE", "FAILED", "EDITED", "PARTIAL"}
+
+
+def apply_prior_contradictions(verdicts: list[Verdict], contradicted: Optional[dict]) -> list[Verdict]:
+    """Fable 5.2 review: a contradiction does not expire when the turn ends.
+
+    *contradicted* is kind -> {"status", "note", "turn"}: the last STALE/FAILED/EDITED/PARTIAL
+    verdict the session produced for that claim kind, kept by the caller until a later turn's
+    OWN evidence backs the kind again (see contradiction_record). A claim of that kind with no
+    evidence this turn (NOT_BACKED) is the same claim made again with nothing new behind it,
+    so it keeps the earlier verdict instead of falling through to apply_session_evidence,
+    which would back it with the very call that was flagged ("earlier this session"). Must
+    run before apply_session_evidence. Only NOT_BACKED verdicts are touched."""
+    if not contradicted:
+        return verdicts
+    out: list[Verdict] = []
+    for v in verdicts:
+        prior = contradicted.get(v.claim.kind) if v.status == "NOT_BACKED" else None
+        if not isinstance(prior, dict) or prior.get("status") not in _CONTRADICTED:
+            out.append(v)
+            continue
+        note = str(prior.get("note") or "flagged earlier")
+        out.append(Verdict(v.claim, prior["status"], None, v.proven_rung,
+                           f"{note}; flagged in turn {prior.get('turn', '?')}, nothing has re-proved it since"))
+    return out
+
+
+def contradiction_record(own_verdicts: list[Verdict], prior: Optional[dict], turn: Any) -> dict:
+    """The kind -> {"status", "note", "turn"} record to keep after a turn. *own_verdicts* are
+    this turn's verdicts BEFORE apply_prior_contradictions and apply_session_evidence, so only
+    a judgment made on this turn's own evidence can set or clear an entry: a contradicted
+    verdict sets it, a BACKED one clears it, and a NOT_BACKED one leaves it as it was."""
+    record = {k: v for k, v in (prior or {}).items() if isinstance(v, dict)}
+    for v in own_verdicts:
+        if v.status in _CONTRADICTED:
+            record[v.claim.kind] = {"status": v.status, "note": v.note, "turn": turn}
+        elif v.status == "BACKED":
+            record.pop(v.claim.kind, None)
+    return record
+
+
 def apply_session_evidence(verdicts: list[Verdict], session_evidence: list[Evidence]) -> list[Verdict]:
     """Item 27 family (f), session recaps: a reply that recaps work actually done in an earlier
     turn of the same session should not read as an overclaim just because this turn's own
