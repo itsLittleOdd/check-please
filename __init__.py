@@ -260,7 +260,16 @@ def _append_session_evidence(sid: str, ev: Any) -> None:
         else:
             data = dict(_SESSION_EVIDENCE_MEM)
         rows = list(data.get(sid, []))
-        rows.append(_evidence_to_dict(ev))
+        new_row = _evidence_to_dict(ev)
+        # Fable 5.2 review: keep one row per kind (the newest). apply_session_evidence only ever
+        # reads the latest successful row of a kind, so the older ones were dead weight, and
+        # this list is re-read and re-written to state.json on every successful tool call. At
+        # the caps above (200 sessions x 200 rows) that file passes Hermes' 10 MB per-plugin
+        # quota, after which every ctx.state write of this plugin fails silently.
+        same = lambda r: (r.get("kind"), tuple(r.get("also_kinds") or ())) == (  # noqa: E731
+            new_row["kind"], tuple(new_row.get("also_kinds") or ()))
+        rows = [r for r in rows if not same(r)]
+        rows.append(new_row)
         if len(rows) > _MAX_SESSION_EVIDENCE:
             del rows[: len(rows) - _MAX_SESSION_EVIDENCE]
         data[sid] = rows
