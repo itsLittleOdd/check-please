@@ -1362,29 +1362,84 @@ def _drop_script_bodies(cmd: str) -> str:
     return _QUOTED_SPAN.sub(repl, cmd)
 
 
-def _shell_write_targets(cmd: str) -> list:
+# Fable 5.2 review: a ">" is only a redirect when the shell itself reads it. Inside a quoted
+# argument (python3 -c "print(2 > 1)", jq '.n > 3', git log --format='%h => %s') or a heredoc
+# body it is a comparison or an arrow, and the old scan read the text after it as a file the
+# command wrote ('1)"', "b'"), which then made an earlier test pass STALE. A quoted span that
+# contains ">" is never a path, so it is blanked before the redirect scan; a quoted TARGET
+# (> "my file.txt") has no ">" inside it and is kept.
+_HEREDOC_BODY = re.compile(r"((?<!<)<<(?!<)-?\s*(['\"]?)(\w+)\2[^\n]*)\n.*?(?:\n[ \t]*\3[ \t]*(?=\n|$)|\Z)", re.S)
+_NOT_A_PATH = re.compile(r"[\"'`()<>=,;*?{}\[\]]|^\d+$|^-")
+
+
+def _drop_heredoc_bodies(cmd: str) -> str:
+    """Keep each heredoc's opening line (it can carry a real redirect: cat > f <<EOF), drop its
+    body: the body is file or program text, not shell."""
+    return _HEREDOC_BODY.sub(lambda m: m.group(1), cmd or "")
+
+
+def _looks_like_path(token: str) -> bool:
+    plain = re.sub(r"\$\{\w+\}", "V", token or "")   # "${DEST}/data.json" is still a path
+    return bool(plain) and not _NOT_A_PATH.search(plain) and not plain.startswith("/dev/")
+
+
+# A quoted command string handed to a shell (bash -c '...', sh -lc "...", eval "...") IS shell
+# text, so a redirect inside it is real and stays visible.
+_SHELL_STRING_LEAD = re.compile(r"(?:\b(?:ba|z|da)?sh\s+-\w*c|\beval)\s*$")
+_SHELL_VAR_ASSIGN = r"(?:^|[\s;&|(])%s=(['\"]?)([^\s'\";&|()]+)\1"
+
+
+def _resolve_shell_var(target: str, cmd: str) -> str:
+    """'$OUT' or '${OUT}/x.json' with the value assigned to OUT earlier in the same command
+    (OUT=/tmp/report.json; ... > "$OUT"). Returned unchanged when there is no such assignment."""
+    m = re.match(r"^\$\{?(\w+)\}?(.*)$", target or "")
+    if not m:
+        return target
+    a = re.search(_SHELL_VAR_ASSIGN % re.escape(m.group(1)), cmd or "")
+    return (a.group(2) + m.group(2)) if a else target
+
+
+def _is_unresolved_shell_target(target: str) -> bool:
+    """A write target still spelled with a shell variable or a command substitution: a file was
+    written, but which one is unknown, so it cannot be held against a test pass."""
+    return "$" in (target or "") or "`" in (target or "")
+
+
+def _shell_write_targets(cmd: str, content_only: bool = False) -> list:
     """Best-effort list of every file path a shell command writes to, or [] when the command
     does not look like a write. Script bodies inside quotes are ignored (_drop_script_bodies).
-    All sub-commands of a chain contribute (cp then a redirect in one && chain both count)."""
-    cmd = _drop_script_bodies(cmd)
+    All sub-commands of a chain contribute (cp then a redirect in one && chain both count).
+    content_only=True leaves out touch/chmod targets, whose content does not change."""
+    cmd = _drop_script_bodies(_drop_heredoc_bodies(cmd))
     targets = []
-    for m in _REDIRECT_TARGET.finditer(cmd):
-        t = _strip_quotes(m.group(1))
-        if t and t != "BODY" and not t.startswith("&") and t != "/dev/null":
+    def _blank(m):
+        if ">" not in m.group(0) or _SHELL_STRING_LEAD.search(cmd[:m.start()]):
+            return m.group(0)
+        return "'BODY'"
+    redirect_text = _QUOTED_SPAN.sub(_blank, cmd)
+    for m in _REDIRECT_TARGET.finditer(redirect_text):
+        if m.start() and redirect_text[m.start() - 1] in "-=":
+            continue  # "->" and "=>" are arrows, not redirects
+        t = _resolve_shell_var(_strip_quotes(m.group(1).strip("'\"")), cmd)
+        if t and t != "BODY" and not t.startswith("&") and _looks_like_path(t):
             targets.append(t)
     for m in _TEE_TARGET.finditer(cmd):
         for tok in m.group(1).split():
             if not tok.startswith("-"):
                 targets.append(_strip_quotes(tok))
-    for rx, last_only in ((_CP_MV_LN_INSTALL_CMD, True), (_SED_PERL_I_CMD, True),
-                          (_TOUCH_CMD, False), (_CHMOD_CMD, False)):
+    shapes = [(_CP_MV_LN_INSTALL_CMD, True), (_SED_PERL_I_CMD, True)]
+    if not content_only:
+        # touch and chmod change no file content, so they can never make a test pass stale;
+        # they still count as a write for the proof-file check (chmod -x on a hook disables it).
+        shapes += [(_TOUCH_CMD, False), (_CHMOD_CMD, False)]
+    for rx, last_only in shapes:
         for m in rx.finditer(cmd):
             toks = [t for t in m.group(1).split() if not t.startswith("-")]
             if toks:
                 targets.extend([_strip_quotes(toks[-1])] if last_only else [_strip_quotes(t) for t in toks])
     seen, out = set(), []
     for t in targets:
-        if t and t not in seen:
+        if t and t not in seen and _looks_like_path(t):
             seen.add(t)
             out.append(t)
     return out
@@ -1419,7 +1474,10 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
                 proof = [t for t in targets if _is_proof_file_path(t)]
                 path = (proof or targets)[0]
                 wkind = "saved_code" if _is_code_path(path) else "saved"
-                stales = not _is_docs_or_notes_path(path)
+                # Stale-eligible when any file whose CONTENT changed is not a docs/notes file
+                # (the displayed path is only the first or the proof-file target).
+                stales = any(not _is_docs_or_notes_path(t) and not _is_unresolved_shell_target(t)
+                             for t in _shell_write_targets(cmd, content_only=True))
                 return Evidence(wkind, True, name, _display_path(path)[:160], seq, ts, "",
                                  stales_tests=stales, path=path)
         if not ok and "&&" in cmd:
