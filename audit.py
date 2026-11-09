@@ -20,6 +20,28 @@ except ImportError:  # flat sys.path import (plain `python3 -m unittest`, same a
     import engine  # type: ignore[no-redef]
 
 
+def _unwrap_bridge_call(name: Any, args: Any) -> tuple:
+    """Fable 5.2 review: a deferred tool reached through Hermes' Tool Search bridge is saved in
+    the session store as a call to `tool_call` with {"calls": [{"name", "arguments"}]}. The
+    live post_tool_call hook sees the real tool (model_tools unwraps the bridge before any
+    hook fires); a replay of the store did not, so a send or a cron job made through the
+    bridge read as no evidence and its claim as NOT BACKED. A single-entry bridge call is one
+    dispatch with one result, so it is replayed as the tool it named. A multi-entry
+    (connector batch) call has one combined result and is left alone."""
+    if name != "tool_call" or not isinstance(args, dict):
+        return name, args
+    entries = args.get("calls")
+    if not isinstance(entries, list) or len(entries) != 1 or not isinstance(entries[0], dict):
+        return name, args
+    inner_args = entries[0].get("arguments")
+    if isinstance(inner_args, str):
+        try:
+            inner_args = json.loads(inner_args)
+        except ValueError:
+            pass
+    return str(entries[0].get("name") or name), inner_args
+
+
 def _iter_turns(messages: Iterable[dict]) -> Iterator[tuple[dict, list]]:
     """Yield (final assistant message, evidence list) per turn, same grouping rule as the
     proven ``replay/score_replay.py``: a user message starts a turn; an assistant message with
@@ -53,6 +75,7 @@ def _iter_turns(messages: Iterable[dict]) -> Iterator[tuple[dict, list]]:
                         args = json.loads(args)
                     except ValueError:
                         pass
+                name, args = _unwrap_bridge_call(name, args)
                 e = engine.classify_call(name, args, result, None, seq=i)
                 if e:
                     ev.append(e)
