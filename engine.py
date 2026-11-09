@@ -3069,6 +3069,15 @@ def inline_worthy(v: Verdict, inline_unbacked: bool = False) -> bool:
     return False
 
 
+_MD_EMPHASIS = re.compile(r"\*\*|__|`")
+
+
+def _plain(text: str) -> str:
+    """Item 70 (Arlo, 2026-11-08): quote a claim without the reply's markdown markers, so a
+    receipt reads 'Email sent to dana@example.com' and not 'Email sent to dana@example.com**'."""
+    return _MD_EMPHASIS.sub("", text or "")
+
+
 def detail_report(verdicts: list[Verdict]) -> str:
     if not verdicts:
         return "Check, Please: no completion claims found in the last reply."
@@ -3076,7 +3085,7 @@ def detail_report(verdicts: list[Verdict]) -> str:
     label = {"BACKED": "BACKED", "STALE": "STALE", "FAILED": "FAILED", "NOT_BACKED": "NOT BACKED",
               "EDITED": "EDITED (proof edited)", "PARTIAL": "PARTIAL"}
     for v in verdicts:
-        lines.append(f"- {label[v.status]}: \"{v.claim.text}\"")
+        lines.append(f"- {label[v.status]}: \"{_plain(v.claim.text)}\"")
         if v.proof:
             lines.append(f"    proof: {v.proof.tool} {v.proof.detail}".rstrip())
         if v.note:

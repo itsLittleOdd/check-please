@@ -4691,3 +4691,14 @@ class PatchDiffIsNotFailureOutput(unittest.TestCase):
 
     def test_failed_patch_still_failed(self):
         self.assertFalse(engine.call_succeeded({"success": False, "error": "old_string not found"}))
+
+
+class DetailReportPlainQuote(unittest.TestCase):
+    """Item 70: /check quotes claims without markdown emphasis markers."""
+
+    def test_markdown_markers_dropped(self):
+        ev = engine.classify_call("write_file", {"path": "/abs/x/report.md"}, {"success": True}, None, seq=1)
+        vs = engine.check_turn("**Saved** the report to `report.md`.", [ev])
+        out = engine.detail_report(vs)
+        self.assertNotIn("**", out)
+        self.assertNotIn("`", out)
