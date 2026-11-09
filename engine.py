@@ -1445,6 +1445,27 @@ def _shell_write_targets(cmd: str, content_only: bool = False) -> list:
     return out
 
 
+_V4A_FILE_HEADER = re.compile(r"^\*\*\*\s*(?:Update|Add|Delete)\s+File:\s*(\S.*?)\s*$", _I)
+_V4A_MOVE_HEADER = re.compile(r"^\*\*\*\s*Move\s+(?:File|to):\s*(?:\S.*?\s*->\s*)?(\S.*?)\s*$", _I)
+
+
+def _v4a_sections(patch_text: str) -> list:
+    """[(path, removed_text, added_text)] for each file a V4A patch touches ("*** Update File:",
+    "*** Add File:", "*** Delete File:", "*** Move File: a -> b" names b), in patch order. The
+    removed/added text is that file's own "-"/"+" lines, so the test-edit checks that read
+    old_string/new_string on a replace-mode patch work the same on this one."""
+    sections: list = []
+    for line in (patch_text or "").splitlines():
+        m = _V4A_FILE_HEADER.match(line) or _V4A_MOVE_HEADER.match(line)
+        if m:
+            sections.append([m.group(1).strip(), [], []])
+        elif sections and line.startswith("-") and not line.startswith("---"):
+            sections[-1][1].append(line[1:])
+        elif sections and line.startswith("+") and not line.startswith("+++"):
+            sections[-1][2].append(line[1:])
+    return [(p, "\n".join(old), "\n".join(new)) for p, old, new in sections if p]
+
+
 def classify_call(tool_name: str, args: Any, result: Any = None, status: Optional[str] = None,
                   seq: int = 0, ts: float = 0.0) -> Optional[Evidence]:
     """Return the evidence a tool call provides, or None when it proves nothing on the ladder."""
@@ -1515,18 +1536,34 @@ def classify_call(tool_name: str, args: Any, result: Any = None, status: Optiona
 
     if low in _WRITE_TOOLS:
         path = str(a.get("path") or a.get("file_path") or a.get("filename") or "")
+        stales = not _is_docs_or_notes_path(path)
+        approval = _is_approval_write(path, a)
+        if not path and isinstance(a.get("patch"), str):
+            # Fable 5.2 review: Hermes' own patch tool in V4A mode (mode="patch") carries no
+            # "path" argument; the files are named inside the patch text. Without this the
+            # write had an empty path: never code, never a test or proof file, never docs,
+            # so a docs-only patch staled a test pass and a test-file patch was invisible to
+            # the proof-edited check.
+            sections = _v4a_sections(a["patch"])
+            if sections:
+                primary = (next((s for s in sections if _is_proof_file_path(s[0])), None)
+                           or next((s for s in sections if _is_code_path(s[0])), None)
+                           or sections[0])
+                path = primary[0]
+                stales = any(not _is_docs_or_notes_path(p) for p, _old, _new in sections)
+                approval = any(_is_approval_write(p, {"new_string": new}) for p, _old, new in sections)
+                a = dict(a, old_string=primary[1], new_string=primary[2])
         if re.search(r"(^|/)drafts?/|draft", path, _I):
             kind = "drafted"
         elif _is_code_path(path):
             kind = "saved_code"
         else:
             kind = "saved"
-        stales = not _is_docs_or_notes_path(path)
         return Evidence(kind, ok, name, _display_path(path)[:160], seq, ts, reason,
                          stales_tests=stales, path=path,
                          adds_test=_adds_test(a), expectation_edit=_expectation_edit(a),
                          expectation_literals=_expectation_literals(a),
-                         is_approval_write=_is_approval_write(path, a))
+                         is_approval_write=approval)
 
     if low in {"cronjob", "cron", "schedule", "cronjob_manage"}:
         action = str(a.get("action") or "")
