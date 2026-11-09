@@ -197,9 +197,9 @@ await checkAsync('chip click fires haptic + host.notify with the real counts, no
   assert.match(sdk.host.notify.calls[0][0].message, /1\/1 backed/)
 })
 
-await checkAsync('an unrecognized verdict status (e.g. FAILED) falls back to NOT BACKED, never throws', async () => {
+await checkAsync('an unrecognized verdict status falls back to NOT BACKED, never throws', async () => {
   sdk.host.state.focusedSessionId = 'sess-4'
-  const ctx = { rest: async () => ({ claims: [{ kind: 'tested', text: 'build failed', status: 'FAILED' }], backed: 0, total: 1 }) }
+  const ctx = { rest: async () => ({ claims: [{ kind: 'tested', text: 'build failed', status: 'SOME_FUTURE_STATUS' }], backed: 0, total: 1 }) }
   const registered = register_(ctx)
   const pane = registered.find((r) => r.id === 'pane')
   render(pane.render())
@@ -282,13 +282,14 @@ await checkAsync('clicking a row expands it to show the proof string (item 29e)'
   assert.equal(rowButtons[0].props['aria-expanded'], false)
   rowButtons[0].props.onClick()
   tree = render(pane.render())
-  assert.match(textOf(tree), /Proof: python3 -m unittest -q \(3 turns ago\)/)
+  // Fable 5.2 review: a flagged row leads with WHY, then names the call it was judged against.
+  assert.match(textOf(tree), /Why flagged: no run since the edit \u2014 Judged against: python3 -m unittest -q \(3 turns ago\)/)
   const reopenedButtons = collect(tree, 'div').filter((d) => d.props.role === 'button')
   assert.equal(reopenedButtons[0].props['aria-expanded'], true)
   // Clicking again collapses it.
   reopenedButtons[0].props.onClick()
   tree = render(pane.render())
-  assert.ok(!textOf(tree).includes('Proof: python3'), 'second click should collapse the row')
+  assert.ok(!textOf(tree).includes('python3 -m unittest -q'), 'second click should collapse the row')
 })
 
 await checkAsync('row shows the built label when the backend sends one, full sentence on expand (item 29a)', async () => {
@@ -385,8 +386,8 @@ await checkAsync('two rows expand independently, proving state is not shared acr
   assert.ok(rowOneButton, 'row one button not found')
   rowOneButton.props.onClick()
   tree = render(pane.render())
-  assert.match(textOf(tree), /Proof: proof one/)
-  assert.ok(!textOf(tree).includes('Proof: proof two'), 'row two must stay collapsed when only row one was clicked')
+  assert.match(textOf(tree), /Judged against: proof one/)   // row one is STALE: a flagged row
+  assert.ok(!textOf(tree).includes('proof two'), 'row two must stay collapsed when only row one was clicked')
 })
 
 await checkAsync('receipt layout (item 29f): rows then a dashed rule then the total, not header-first', async () => {
@@ -418,6 +419,53 @@ await checkAsync('receipt layout (item 29f): rows then a dashed rule then the to
   assert.deepEqual(flatTexts, ['[LINES]', '[TOTAL]'])
   // The total line still reads with text, not color alone (item 12).
   assert.match(textOf(totalDiv), /1 backed · 1 not backed/)
+})
+
+// Fable 5.2 review: FAILED / EDITED / PARTIAL are contradictions, not "no receipt". Each gets
+// its own label in the row and in the tally, and its reason shows on expand.
+await checkAsync('FAILED, EDITED and PARTIAL rows carry their own labels, never NOT BACKED', async () => {
+  sdk.host.state.focusedSessionId = 'sess-f52-labels'
+  const payload = {
+    claims: [
+      { kind: 'sent', text: 'Invoice emailed to Dana', label: 'Message sent to Dana', status: 'EDITED', proof: 'bin/mail dana@example.com', note: 'sent ran through bin/mail, which was rewritten this session' },
+      { kind: 'deployed', text: 'Deployed to prod', label: 'Deploy went live on prod', status: 'FAILED', proof: './deploy.sh prod', note: 'deployed call exited 1' },
+      { kind: 'tested', text: 'All tests pass', label: 'Tests ran clean', status: 'PARTIAL', proof: 'pytest tests/test_one.py', note: 'only tests/test_one.py ran' },
+      { kind: 'saved', text: 'Saved the notes', label: 'File saved', status: 'NOT_BACKED', note: 'no saved call this turn' },
+      { kind: 'committed', text: 'Committed', label: 'Changes committed', status: 'BACKED', proof: 'git commit -m x' }
+    ],
+    backed: 1,
+    total: 5
+  }
+  const ctx = { rest: async () => payload }
+  const registered = register_(ctx)
+  const pane = registered.find((r) => r.id === 'pane')
+  render(pane.render())
+  await settle()
+  let tree = render(pane.render())
+  const rows = collect(tree, 'div').filter((d) => d.props.role === 'button')
+  const labels = rows.map((r) => textOf(collect(r, 'span')[1])).sort()
+  assert.deepEqual(labels, ['BACKED', 'FAILED', 'NOT BACKED', 'PARTIAL RUN', 'PROOF EDITED'])
+  const totalDiv = collect(tree, 'div').find((d) => (d.props.className || '').includes('receipt-total'))
+  assert.match(textOf(totalDiv), /1 backed · 1 not backed · 1 proof edited · 1 failed · 1 partial run/)
+  // Expanding the EDITED row shows the reason, not just a command that reads as proof.
+  const editedRow = rows.find((r) => textOf(collect(r, 'span')[1]) === 'PROOF EDITED')
+  editedRow.props.onClick()
+  tree = render(pane.render())
+  assert.match(textOf(tree), /Why flagged: sent ran through bin\/mail, which was rewritten this session \u2014 Judged against: bin\/mail dana@example.com/)
+})
+
+await checkAsync('a BACKED row still expands to its proof', async () => {
+  sdk.host.state.focusedSessionId = 'sess-f52-backed'
+  const payload = { claims: [{ kind: 'tested', text: 'Tests pass', label: 'Tests ran clean', status: 'BACKED', proof: 'pytest -q' }], backed: 1, total: 1 }
+  const ctx = { rest: async () => payload }
+  const registered = register_(ctx)
+  const pane = registered.find((r) => r.id === 'pane')
+  render(pane.render())
+  await settle()
+  let tree = render(pane.render())
+  collect(tree, 'div').filter((d) => d.props.role === 'button')[0].props.onClick()
+  tree = render(pane.render())
+  assert.match(textOf(tree), /Tests pass \u2014 Proof: pytest -q/)
 })
 
 // useClaims' setInterval(load, POLL_MS) is never cleared here (no real unmount happens in this

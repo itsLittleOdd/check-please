@@ -37,10 +37,18 @@ function useClaims(ctx) {
   return data
 }
 
+// Fable 5.2 review: FAILED, EDITED and PARTIAL had no entry here, so each rendered as
+// "NOT BACKED", the one label the README defines as "no receipt found, often not an overclaim
+// at all". A claim the tool log contradicts (the call failed, or passed only after the agent
+// edited the check) looked identical to a claim with no receipt, and the tally read
+// "1 not backed · 1 not backed". Same words engine.summary_line uses in the reply line.
 const VERDICT_STYLES = {
   BACKED: { label: 'BACKED', color: 'var(--ui-positive, #2e7d32)' },
   STALE: { label: 'STALE', color: 'var(--ui-caution, #b8860b)' },
-  NOT_BACKED: { label: 'NOT BACKED', color: 'var(--ui-danger, #c62828)' }
+  NOT_BACKED: { label: 'NOT BACKED', color: 'var(--ui-danger, #c62828)' },
+  FAILED: { label: 'FAILED', color: 'var(--ui-danger, #c62828)' },
+  EDITED: { label: 'PROOF EDITED', color: 'var(--ui-danger, #c62828)' },
+  PARTIAL: { label: 'PARTIAL RUN', color: 'var(--ui-caution, #b8860b)' }
 }
 
 function verdictStyle(verdict) {
@@ -107,17 +115,24 @@ function tallyText(claims) {
 // rather than inventing a timestamp the backend doesn't send.
 // Item 29(a): the row now shows a short label, not the raw mid-sentence fragment, so the
 // full claim.text (the actual sentence) goes here first, ahead of proof/reason.
+// Fable 5.2 review: a flagged row that HAS a proof string (every STALE, EDITED, PARTIAL and
+// FAILED row does: the proof is the call that was contradicted) used to expand to
+// "Proof: pytest -q" and nothing else, which reads as "proven". The reason comes first now;
+// the call it was judged against follows.
 function rowDetailText(claim) {
   const parts = [claim.text]
-  if (claim.proof) parts.push(`Proof: ${claim.proof}`)
-  else if (claim.note) parts.push(`Why flagged: ${claim.note}`)
-  else parts.push('No proof recorded.')
+  const flagged = claim.status !== 'BACKED'
+  if (flagged && claim.note) parts.push(`Why flagged: ${claim.note}`)
+  if (claim.proof) parts.push(`${flagged ? 'Judged against' : 'Proof'}: ${claim.proof}`)
+  else if (!claim.note) parts.push('No proof recorded.')
+  else if (!flagged) parts.push(claim.note)
   return parts.join(' \u2014 ')
 }
 
 function ClaimRow({ claim, expanded, onToggle }) {
   // claim.status matches engine.claims_payload()'s key exactly (BACKED | STALE | NOT_BACKED |
-  // FAILED); FAILED falls through to the NOT_BACKED style via verdictStyle's default.
+  // FAILED | EDITED | PARTIAL); a status this build has never heard of falls through to the
+  // NOT_BACKED style via verdictStyle's default.
   const style = verdictStyle(claim.status)
   // Item 29(b): a deduped same-run STALE row carries claim.count > 1; show it next to the
   // label (text, never color alone, same item-12 rule the base label already follows).
