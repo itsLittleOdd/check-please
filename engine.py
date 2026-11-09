@@ -2569,6 +2569,33 @@ def _count_from_failed_run(claim: "Claim", latest: "Evidence") -> bool:
     return bool(re.search(rf"\b{m.group(1)}\s+(?:tests?\s+)?passed\b", latest.fail_text or "", _I))
 
 
+# Fable 5.2 review: the closed phrase list above ("still fails", "is red", "failed with") misses
+# the most common honest report of all, the number itself: "2 failed, 71 passed", "3 failures are
+# pre-existing", "1 test fails on main too". When the reply (its own words, not an old Check
+# line) states a failure count that the latest failing run itself printed, the reader has been
+# told about the failure; a pass clause elsewhere in the same reply is not contradicted by it.
+# In the three real-history stores, 27 of the 40 inline FAILED alerts on a terminal test run sit
+# on a reply like this.
+_FAIL_COUNT_IN_OUTPUT = re.compile(
+    r"\b([1-9]\d*)\s*(?:tests?\s+|specs?\s+|checks?\s+)?(?:failed|failures?|failing|errors?)\b", _I)
+_FAIL_COUNT_IN_REPLY = re.compile(
+    r"\b([1-9]\d*)\s+(?:[\w-]+\s+){0,2}?(?:failed|failures?|failing|fails?|errors?)\b", _I)
+
+
+def _reply_states_run_failure(reply: str, latest: "Evidence") -> str:
+    """The failure count ("3") the reply states AND the latest failing run printed, or ''."""
+    if latest is None or latest.ok or not latest.fail_text:
+        return ""
+    printed = {m.group(1) for m in _FAIL_COUNT_IN_OUTPUT.finditer(latest.fail_text)}
+    if not printed:
+        return ""
+    own_words = _CHECK_LINE.sub(" ", reply or "")
+    for m in _FAIL_COUNT_IN_REPLY.finditer(own_words):
+        if m.group(1) in printed:
+            return m.group(1)
+    return ""
+
+
 _TESTED_MATCH_STOPWORDS = {
     "the", "its", "is", "are", "now", "all", "and", "itself", "done",
     "this", "that", "for", "with", "pass", "passes", "passed", "tests",
@@ -2683,6 +2710,27 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
                     verdicts.append(Verdict(claim, "NOT_BACKED", None, rung,
                                             f"no passing {claim.kind} call this turn" +
                                             (f"; proven: {rung}" if rung else "")))
+                continue
+            stated = _reply_states_run_failure(reply, latest)
+            if stated:
+                # The reply reports this run's own failure count. Same idea as item 54, with
+                # one difference: STALE means "no run since the change", and here a run did
+                # happen since (this one) and the reply says how it went. So a pass clause is
+                # judged against the best earlier pass only when that pass is still current;
+                # otherwise it has no clean receipt, which is /check material, not an alert.
+                if _count_from_failed_run(claim, latest):
+                    verdicts.append(Verdict(claim, "BACKED", latest, rung,
+                                            "the count comes from the latest run, which the reply reports as failing"))
+                    continue
+                passes = [e for e in backers if e.ok]
+                fallback = (_tested_pass_verdict(claim, _best_matching_pass(passes, claim, reply),
+                                                 evidence, backers, rung, reply) if passes else None)
+                if fallback is not None and fallback.status != "STALE":
+                    verdicts.append(fallback)
+                else:
+                    verdicts.append(Verdict(claim, "NOT_BACKED", None, rung,
+                                            f"the latest {_KIND_WORDS.get(claim.kind, claim.kind)} run "
+                                            f"had {stated} failing, which the reply states"))
                 continue
             reason = latest.reason or _GENERIC_FAILURE_REASON
             note = reason if reason == _GENERIC_FAILURE_REASON else f"{claim.kind} call {reason}"
