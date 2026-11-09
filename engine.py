@@ -1782,6 +1782,28 @@ def _normalize_env(word: str) -> str:
     return _ENV_ALIASES.get(w, w)
 
 
+# Fable 5.2 review: "to <word>" is a target only when the word can be one. Before this, any word
+# after "to" was compared with the call's real target, so everyday true claims read NOT BACKED
+# with a wrong note: "Pushed to `main`." -> "pushed to main, not code" (the inline-code
+# placeholder), "Pushed to GitHub." -> "not github", "Emailed it to confirm the total." ->
+# "not confirm". A person is a Capitalized word; a branch is a known branch name or looks like
+# a ref (has / - _ . or a digit); the inline-code placeholder and a remote's name are neither.
+_REF_TO_TOKEN_RE = re.compile(r"\bto\s+([A-Za-z][\w'./-]*)")
+_KNOWN_BRANCHES = {"main", "master", "develop", "dev", "trunk", "staging", "prod", "production",
+                   "release", "gh-pages", "next", "stable"}
+_NOT_A_REF = {"code", "origin", "upstream", "remote", "github", "gitlab", "bitbucket", "git"}
+
+
+def _claimed_ref(text: str) -> Optional[str]:
+    for m in _REF_TO_TOKEN_RE.finditer(text):
+        tok = m.group(1).rstrip(".,'").lower()
+        if tok in _NOT_A_REF or tok in _PUSH_TO_STOPWORDS:
+            continue
+        if tok in _KNOWN_BRANCHES or re.search(r"[/_\d-]|\w\.\w", tok):
+            return tok
+    return None
+
+
 def claim_target(kind: str, text: str) -> Optional[str]:
     """Extract the target a claim names (lowercased except person names), or None when the
     sentence names no target for this kind. Never guesses: a kind with no target pattern
@@ -1792,18 +1814,16 @@ def claim_target(kind: str, text: str) -> Optional[str]:
         m = _EMAIL_RE.search(text)
         if m:
             return m.group(0).lower()
-        m = _TO_TOKEN_RE.search(text)
-        if m and m.group(1).lower() not in _SENT_TO_STOPWORDS:
-            return m.group(1)
+        for m in _TO_TOKEN_RE.finditer(text):
+            word = m.group(1)
+            if word[:1].isupper() and word != "CODE" and word.lower() not in _SENT_TO_STOPWORDS:
+                return word
         return None
     if kind == "deployed":
         m = _ENV_TO_RE.search(text)
         return _normalize_env(m.group(1)) if m else None
     if kind in ("pushed", "committed"):
-        m = _TO_TOKEN_RE.search(text)
-        if m and m.group(1).lower() not in _PUSH_TO_STOPWORDS:
-            return m.group(1).lower()
-        return None
+        return _claimed_ref(text)
     if kind in ("saved", "drafted"):
         m = _FILE_EXT_RE.search(text)
         return m.group(0).lower() if m else None
@@ -1857,21 +1877,51 @@ def evidence_target(kind: str, ev: "Evidence") -> Optional[str]:
         m = _EMAIL_RE.search(ev.detail or "")
         return m.group(0).lower() if m else None
     if kind == "deployed":
-        m = _ENV_WORD_RE.search(ev.detail or "")
-        return _normalize_env(m.group(1)) if m else None
+        envs = _evidence_envs(ev.detail or "")
+        return envs[0] if envs else None
     if kind in ("pushed", "committed"):
-        m = _GIT_PUSH_BRANCH_RE.search(ev.detail or "")
-        if m:
-            branch = m.group(1).rstrip(".,!?")
-            if branch.lower() not in _PUSH_TO_STOPWORDS:
-                return branch.lower()
-        return None
+        refs = _git_push_refs(ev.detail or "")
+        return refs[-1] if len(refs) >= 2 else None   # bare `git push [remote]`: branch unknown
     if kind in ("saved", "drafted"):
         p = ev.path or ev.detail or ""
         if not p:
             return None
         return p.rsplit("/", 1)[-1].lower()
     return None
+
+
+_ENV_IN_COMMAND_RE = re.compile(
+    r"(?<![\w/.~])(prod|production|staging|stage|dev|development|test|testing)(?![\w/.])", _I)
+_ROLE_MAILBOXES = {"billing", "ap", "ar", "accounts", "accounting", "finance", "invoices", "info",
+                   "hello", "team", "office", "admin", "support", "sales", "contact", "mail"}
+
+
+def _evidence_envs(detail: str) -> list:
+    """Every environment word the command names as its own word, in order. A path component
+    (`cd ~/dev/site`, `> /dev/null`) is not one."""
+    return list(dict.fromkeys(_normalize_env(m.group(1)) for m in _ENV_IN_COMMAND_RE.finditer(detail)))
+
+
+def _git_push_refs(detail: str) -> list:
+    """The non-flag words after `git push` (remote, then branch), lowercased; `a:b` names b.
+    `git push -u origin main` -> ['origin', 'main']; the old pattern read '-u' as the remote
+    and 'origin' as the branch."""
+    m = re.search(r"\bgit\s+push\b([^;&|\n]*)", detail, _I)
+    if not m:
+        return []
+    refs = [w for w in m.group(1).split() if not w.startswith("-") and not re.match(r"^\d*[<>]", w)]
+    return [_strip_quotes(w).rsplit(":", 1)[-1].rstrip(".,!?").lower() for w in refs]
+
+
+def _name_fits_address(name: str, address: str) -> bool:
+    """True unless the address plainly belongs to someone else. A send tool reports an address,
+    never the person's name, so 'Dana' fits dana@, dana.smith@ and smith.dana@ (the name is a
+    word of the address), may be dsmith@ (same initial) or a shared mailbox (billing@), and
+    does not fit sam@."""
+    n = name.lower()
+    local = address.lower().split("@", 1)[0]
+    words = [w for w in re.split(r"[^a-z]+", local) if w]
+    return n in words or local in _ROLE_MAILBOXES or any(w[:1] == n[:1] for w in words)
 
 
 def _targets_equivalent(kind: str, a: str, b: str) -> bool:
@@ -1887,6 +1937,24 @@ def _targets_equivalent(kind: str, a: str, b: str) -> bool:
         b_local = b_l.split("@", 1)[0]
         if a_local and a_local == b_local:
             return True
+        if ("@" in a_l) != ("@" in b_l):   # a name on one side, an address on the other
+            name, address = (b, a) if "@" in a_l else (a, b)
+            return _name_fits_address(name, address)
+    return False
+
+
+def _evidence_names_target(kind: str, claim: "Claim", ev: "Evidence") -> bool:
+    """True when the call touched what the claim names, counting everything the call names:
+    any environment word in a deploy command, the remote or the branch of a push, and a saved
+    file the claim sentence mentions anywhere (not only the first file name in it)."""
+    target = claim.target or ""
+    if kind == "deployed":
+        return target in _evidence_envs(ev.detail or "")
+    if kind in ("pushed", "committed"):
+        return target in _git_push_refs(ev.detail or "")
+    if kind in ("saved", "drafted"):
+        base = (ev.path or ev.detail or "").rsplit("/", 1)[-1].lower()
+        return bool(base) and base in (claim.text or "").lower()
     return False
 
 
@@ -1900,7 +1968,7 @@ def target_mismatch_note(claim: "Claim", kind: str, ev: Optional["Evidence"]) ->
     e_target = evidence_target(kind, ev)
     if not e_target:
         return None
-    if _targets_equivalent(kind, c_target, e_target):
+    if _targets_equivalent(kind, c_target, e_target) or _evidence_names_target(kind, claim, ev):
         return None
     return f"{kind} to {e_target}, not {c_target}"
 
@@ -2834,7 +2902,8 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
                 if claim.target:
                     for ev in reversed(good):
                         e_target = evidence_target(claim.kind, ev)
-                        if e_target and _targets_equivalent(claim.kind, claim.target, e_target):
+                        if e_target and (_targets_equivalent(claim.kind, claim.target, e_target)
+                                         or _evidence_names_target(claim.kind, claim, ev)):
                             matched = ev
                             break
                 proof = matched or good[-1]
