@@ -225,18 +225,40 @@ def _is_ci_command(words: list) -> bool:
     return False
 
 
+# Fable 5.2 review: a check word is evidence of a check only when something that can check ran.
+# `grep -rn validate src/`, `cat lint.log`, `echo "smoke ok"` and `git rev-parse --verify HEAD`
+# read, print or look things up; none of them runs a check, whatever word is in their
+# arguments. Counting them made `grep` the receipt under a BACKED "tests pass", made a grep
+# with no match (exit 1) read as a FAILED test run, and anchored STALE alerts on a pass that
+# was never a test. Closed list of programs that only read, print, copy or navigate. git is on
+# it for check WORDS only; `git diff --check` is still matched by _CHECK_FLAGS above.
+_NEVER_A_CHECK_PROGRAMS = {
+    "grep", "egrep", "fgrep", "rg", "ag", "ack", "cat", "bat", "less", "more", "head", "tail",
+    "echo", "printf", "ls", "find", "fd", "wc", "sed", "awk", "cut", "sort", "uniq", "tr", "jq",
+    "yq", "diff", "cmp", "stat", "file", "which", "whereis", "tree", "du", "df", "pwd", "date",
+    "cd", "pushd", "popd", "mkdir", "touch", "cp", "mv", "ln", "rm", "chmod", "chown", "open",
+    "man", "export", "sleep", "tee", "git", "read", "basename", "dirname", "realpath",
+}
+# An option that switches a check OFF (--no-verify, --skip-lint) is not a check either.
+_NEGATED_OPTION = re.compile(r"^--?(?:no|skip|without|disable|ignore)[-_]", _I)
+
+
 def _check_cmd_match(text: str) -> bool:
     if _CHECK_FLAGS.search(text or ""):
         return True
-    for stage in _STAGE_SPLIT.split(text or ""):
+    for stage in re.split(r"&&|\|\||;|\||\n", text or ""):
         words = _stage_words(stage)
         if not words:
             continue
         if _is_ci_command(words):
             return True
+        if _strip_quotes(words[0]).rsplit("/", 1)[-1].lower() in _NEVER_A_CHECK_PROGRAMS:
+            continue
         prog = _program_index(words)
         for i, w in enumerate(words):
             tok = _strip_quotes(w)
+            if _NEGATED_OPTION.match(tok):
+                continue
             if "/" in tok:
                 if i == prog and _CHECK_WORD.search(tok.rsplit("/", 1)[-1]):
                     return True
