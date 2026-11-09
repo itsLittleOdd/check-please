@@ -3,6 +3,34 @@
 All notable changes to Check, Please are logged here. Versions follow the
 project's own pace, not strict semver, while the plugin is pre-catalog.
 
+## 0.4.2 - 2026-11-09
+
+A correctness pass from an independent review by Claude Fable 5.2, measured on the
+same gates as every other change: no new false alarms on the graded bench, holdout
+unchanged, about a third fewer inline alerts on real history.
+
+- Fixed: `/check` only ever shows the asking chat's own claims. On a gateway it
+  could fall back to another chat's last reply.
+- Fixed: the README now says what the plugin stores on disk (`state.json`, a
+  14-day claim log) and lists every hook and verdict.
+- Fixed: a flagged claim stays flagged when the agent repeats it next turn with
+  nothing new.
+- Fixed: chained commands (`pytest && git push`) credit only the stages that ran;
+  a chain that died at the tests is a failed test run.
+- Fixed: a reply that states the failing run's own failure count is reporting it,
+  not overclaiming.
+- Fixed: read-only commands (grep, cat, echo) are never test runs; a `>` inside
+  quotes or a heredoc is not a file write; V4A patches name their files.
+- Fixed: target matching no longer calls true claims mismatches ("Pushed to
+  `main`", "Emailed Dana" with dana.smith@).
+- Fixed: the Desktop pane labels FAILED, PROOF EDITED and PARTIAL RUN, and a
+  flagged row shows why.
+- Fixed: session evidence keeps one row per kind, so the state file stays small;
+  only the plugin's own lines are skipped when reading claims; `audit` unwraps
+  Tool Search bridge calls.
+- Six known gaps are recorded as expected-failure tests (dry runs, writes made
+  inside a script body, and others) for after the hackathon.
+
 ## 0.4.1 - 2026-11-09
 
 - The check line now defaults to `issues`: an honest reply gets no line, and a

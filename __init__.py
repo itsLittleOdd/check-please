@@ -23,7 +23,7 @@ from typing import Any, Optional
 
 from . import engine
 
-__version__ = "0.4.1"   # keep in step with plugin.yaml
+__version__ = "0.4.2"   # keep in step with plugin.yaml
 logger = logging.getLogger("check_please")
 
 _LOCK = threading.Lock()
