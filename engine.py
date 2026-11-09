@@ -2338,7 +2338,13 @@ _QUESTION = re.compile(r"\?\s*$")
 _CODE_FENCE = re.compile(r"```.*?```", re.S)
 _INLINE_CODE = re.compile(r"`[^`\n]*`")
 _QUOTE_LINE = re.compile(r"^\s*>.*$", re.M)
-_CHECK_LINE = re.compile(r"^\s*(\u2611|\[check\]|check:).*$", re.M | _I)
+# Fable 5.2 review: this used to drop ANY line starting with "check:", so a reply line the agent
+# wrote itself ("Check: all tests pass and it is deployed.") was never read for claims at all.
+# Only the plugin's own line shapes are dropped now: "Check: 2 backed, 1 stale. ...", the
+# subagent form, and the cron guard line ("Check, Please: 1 claim not backed: ...").
+_CHECK_LINE = re.compile(
+    r"^\s*(?:\u2611|\[check\]|check:\s*\d+\s+(?:backed|stale|failed|proof edited|partial run|"
+    r"not backed|subagent claims?)\b|check, please:\s*\d+\s+claims?\s+not backed\b).*$", re.M | _I)
 # WALL-BREAKER part (i), first slice (item 27): a claim word inside a markdown heading or a
 # table row is a label or a data cell, not a sentence someone is asserting as done (invented
 # examples: "## Deployed\n" as a section title, "| sent | 2026-11-05 |" as a table row). Strip
