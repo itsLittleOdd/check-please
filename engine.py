@@ -1047,7 +1047,14 @@ def _failure_reason(result: Any, status: Optional[str] = None) -> str:
         return "result marked FAILED"
     m = _RESULT_FAILURE_TEXT.search(text_blob)
     if m:
-        return m.group(0)
+        # Item 73 (Arlo, 2026-11-09): a bare marker like "Error:" told the reader nothing
+        # ("deployed call Error:"). Keep the rest of that output line, capped.
+        if not m.group(0).rstrip().endswith(":"):
+            return m.group(0)
+        line_end = text_blob.find("\n", m.end())
+        rest = text_blob[m.end(): line_end if line_end != -1 else len(text_blob)].strip()
+        found = m.group(0).rstrip().rstrip(":")
+        return f"{found}: {rest[:70]}" if rest else found
     if data:
         err = data.get("error")
         if err not in (None, "", False, [], {}):
@@ -2499,7 +2506,7 @@ def _tested_pass_verdict(claim: "Claim", pass_ev: "Evidence", evidence: list,
                             getattr(proof_write, "expectation_literals", ())):
             return Verdict(claim, "BACKED", pass_ev, rung, "after an edit the reply mentions")
         return Verdict(claim, "EDITED", pass_ev, rung,
-                        f"{claim.kind} passed only after {proof_name} was edited")
+                        f"{_KIND_WORDS.get(claim.kind, claim.kind)} passed only after {proof_name} was edited")
     earlier_failed_tested = any(e.seq < pass_ev.seq and not e.ok for e in backers)
     if (pass_ev.narrow_scope and not _claims_named_subset(claim.text)
             and earlier_failed_tested):
@@ -2587,7 +2594,7 @@ def check_turn(reply: str, evidence: list[Evidence]) -> list[Verdict]:
                                             "after an edit the reply mentions"))
                 else:
                     verdicts.append(Verdict(claim, "EDITED", pass_ev, rung,
-                                            f"{claim.kind} passed only after {proof_name} was edited"))
+                                            f"{_KIND_WORDS.get(claim.kind, claim.kind)} passed only after {proof_name} was edited"))
             else:
                 # Item 39 (target matching): when the claim names a target, prefer whichever
                 # successful call actually touched that target; only call it a mismatch when
@@ -3076,6 +3083,10 @@ def _plain(text: str) -> str:
     """Item 70 (Arlo, 2026-11-08): quote a claim without the reply's markdown markers, so a
     receipt reads 'Email sent to dana@example.com' and not 'Email sent to dana@example.com**'."""
     return _MD_EMPHASIS.sub("", text or "")
+
+
+# Item 73: claim kinds read as words in notes ("tests passed only after ...").
+_KIND_WORDS = {"tested": "tests"}
 
 
 def detail_report(verdicts: list[Verdict]) -> str:

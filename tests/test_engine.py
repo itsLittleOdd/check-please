@@ -4741,3 +4741,23 @@ class DefaultLineIsIssues(unittest.TestCase):
         out = m.on_transform_llm_output(response_text="Tests pass.", session_id="d2")
         self.assertIsNotNone(out)
         self.assertIn("stale", out)
+
+
+class NoteWordingNov9(unittest.TestCase):
+    """Item 73: readable notes for an edited test and a failed deploy."""
+
+    def test_edited_note_says_tests(self):
+        evs = [e for e in [
+            engine.classify_call("terminal", {"command": "python3 -m pytest -q"},
+                                 {"output": "1 failed, 23 passed", "exit_code": 1}, None, seq=1),
+            engine.classify_call("patch", {"path": "/w/shop/tests/test_pricing.py", "old_string": "90", "new_string": "85"},
+                                 {"success": True}, None, seq=2),
+            engine.classify_call("terminal", {"command": "python3 -m pytest -q"},
+                                 {"output": "24 passed", "exit_code": 0}, None, seq=3)] if e]
+        vs = engine.check_turn("All 24 tests green.", evs)
+        self.assertTrue(any("tests passed only after" in v.note for v in vs), [v.note for v in vs])
+
+    def test_error_reason_keeps_its_line(self):
+        r = engine._failure_reason({"output": "Error: Build failed: missing env STRIPE_KEY\nmore", "exit_code": 1})
+        self.assertIn("Build failed", r)
+        self.assertNotIn("more", r)
