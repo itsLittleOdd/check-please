@@ -31,7 +31,7 @@ An honest reply gets no line by default (`line: issues`). It never edits the age
 
 The match is plain code: no second model, no network.
 
-Demo (under 90 s): [X POST LINK]
+Demo (under 90 s): https://x.com/Just_Whalen/status/2119954873131106776
 
 **Hermes surfaces used**
 
